@@ -67,7 +67,7 @@ class StatusBarService {
                 (latest.cache_write_tokens ?? 0) +
                 (latest.cache_read_tokens ?? 0)
             const tokensLabel = this.fmtTokens(totalTokens)
-            const reqCost = latest.requests_costs != null ? String(latest.requests_costs) : '0'
+            const reqCost = latest.requests_costs != null ? Number(latest.requests_costs).toFixed(2) : '0'
             this.item.text = `${emoji} ${cost} | ${tokensLabel} | Req ${reqCost}`
         } else {
             this.item.text = '$(dashboard) データなし'
