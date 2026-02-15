@@ -1,5 +1,15 @@
 # Cursor Economizer
 
+[![Version](https://img.shields.io/visual-studio-marketplace/v/pacific-system.cursor-economizer)](https://marketplace.visualstudio.com/items?itemName=pacific-system.cursor-economizer)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/pacific-system.cursor-economizer)](https://marketplace.visualstudio.com/items?itemName=pacific-system.cursor-economizer)
+[![Rating](https://img.shields.io/visual-studio-marketplace/r/pacific-system.cursor-economizer)](https://marketplace.visualstudio.com/items?itemName=pacific-system.cursor-economizer)
+[![License](https://img.shields.io/github/license/cursor-tool/cursor-economizer)](LICENSE)
+[![Contributions Welcome](https://img.shields.io/badge/contributions-welcome-brightgreen)](CONTRIBUTING.md)
+[![Open VSX](https://img.shields.io/open-vsx/v/pacific-system/cursor-economizer)](https://open-vsx.org/extension/pacific-system/cursor-economizer)
+[![GitHub Stars](https://img.shields.io/github/stars/cursor-tool/cursor-economizer)](https://github.com/cursor-tool/cursor-economizer)
+[![GitHub Issues](https://img.shields.io/github/issues/cursor-tool/cursor-economizer)](https://github.com/cursor-tool/cursor-economizer/issues)
+[![Last Commit](https://img.shields.io/github/last-commit/cursor-tool/cursor-economizer)](https://github.com/cursor-tool/cursor-economizer/commits/main)
+
 > **Cursor の利用料金を確認・分析する拡張機能**
 
 Track your Cursor AI usage costs with detailed breakdowns, billing cycle tracking, and memo support.
