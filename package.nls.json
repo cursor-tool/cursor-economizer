@@ -6,6 +6,7 @@
   "commands.refreshData.title": "Refresh Data",
   "commands.setToken.title": "Set Token",
   "commands.clearToken.title": "Clear Token",
+  "commands.exportCsv.title": "Export CSV",
   "config.general.title": "Cursor Economizer: General",
   "config.goals.title": "Cursor Economizer: Goals",
   "config.table.title": "Cursor Economizer: Table",

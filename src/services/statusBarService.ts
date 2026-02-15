@@ -143,6 +143,7 @@ class StatusBarService {
                 `---\n\n` +
                 `[💹](command:cursorEconomizer.openDetail)` +
                 ` | [🔄️](command:cursorEconomizer.refreshData)` +
+                ` | [📥](command:cursorEconomizer.exportCsv)` +
                 ` | [🔑](command:cursorEconomizer.setToken)` +
                 ` | [⚙️](command:workbench.action.openSettings?%22cursorEconomizer%22)`
         )
@@ -286,6 +287,7 @@ class StatusBarService {
                 `---\n\n` +
                 `[🔑 トークン設定](command:cursorEconomizer.setToken)` +
                 ` | [🔄️ データ取得](command:cursorEconomizer.refreshData)` +
+                ` | [📥 CSV](command:cursorEconomizer.exportCsv)` +
                 ` | [⚙️ 設定](command:workbench.action.openSettings?%22cursorEconomizer%22)`
         )
         tooltip.isTrusted = true

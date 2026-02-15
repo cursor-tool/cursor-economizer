@@ -86,7 +86,7 @@ Track your Cursor AI usage costs with detailed breakdowns, billing cycle trackin
 - 🆓 プラン利用率（使用数 / 上限）
 - 💸 オンデマンド累積支出
 
-ツールチップ内のアイコンから各コマンドに直接アクセスできます：💹 詳細 | 🔄️ 更新 | 🔑 トークン設定 | ⚙️ 設定
+ツールチップ内のアイコンから各コマンドに直接アクセスできます：💹 詳細 | 🔄️ 更新 | 🔑 トークン設定 | 📥 CSV エクスポート | ⚙️ 設定
 
 ## Commands
 
@@ -162,7 +162,7 @@ MIT
 
 今後のリリースで以下の機能を予定しています。
 
-- **CSV ダウンロード** — 利用データを CSV 形式でエクスポート
+- ~~**CSV ダウンロード** — 利用データを CSV 形式でエクスポート~~ ✅ v0.1.4 で実装済み
 - **コストタグ** — タグを設定し、タグ別にコストを集計・分類
 
 要望や優先度のフィードバックは [Issue](https://github.com/cursor-tool/cursor-economizer/issues) で受け付けています。

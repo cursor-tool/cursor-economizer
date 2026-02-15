@@ -1,5 +1,6 @@
 import * as vscode from 'vscode'
 import * as path from 'path'
+import * as os from 'os'
 import { dbService } from './services/dbService'
 import { tokenService } from './services/tokenService'
 import { statusBarService } from './services/statusBarService'
@@ -721,6 +722,94 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
         vscode.commands.registerCommand('cursorEconomizer.openDetail', () => {
             webviewService.openPanel()
+        })
+    )
+
+    // コマンド登録: CSV エクスポート
+    context.subscriptions.push(
+        vscode.commands.registerCommand('cursorEconomizer.exportCsv', async () => {
+            if (!dbReady) {
+                vscode.window.showErrorMessage(
+                    'DB が初期化されていません。Cursor を再起動してください'
+                )
+                return
+            }
+
+            const db = dbService.getDb()
+            const result = db.exec('SELECT * FROM usage_events ORDER BY timestamp DESC')
+
+            if (result.length === 0 || result[0].values.length === 0) {
+                vscode.window.showInformationMessage('エクスポートするデータがありません')
+                return
+            }
+
+            const columns = result[0].columns
+            const rows = result[0].values
+
+            // id, raw_json カラムを除外するインデックスを特定
+            const excludeSet = new Set(['id', 'raw_json'])
+            const includeIndices: number[] = []
+            const headerNames: string[] = []
+            for (let i = 0; i < columns.length; i++) {
+                if (!excludeSet.has(columns[i])) {
+                    includeIndices.push(i)
+                    headerNames.push(columns[i])
+                }
+            }
+
+            // CSV エスケープ（RFC 4180 準拠）
+            const escapeCsvField = (value: unknown): string => {
+                if (value === null || value === undefined) {
+                    return ''
+                }
+                const str = String(value)
+                if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+                    return `"${str.replace(/"/g, '""')}"`
+                }
+                return str
+            }
+
+            // CSV 文字列を構築
+            const csvLines: string[] = []
+            csvLines.push(headerNames.map(escapeCsvField).join(','))
+            for (const row of rows) {
+                const line = includeIndices.map((idx) => escapeCsvField(row[idx])).join(',')
+                csvLines.push(line)
+            }
+            const csvContent = '\uFEFF' + csvLines.join('\n')
+
+            // デフォルトファイル名: cursor-usage-YYYYMMDD.csv
+            const now = new Date()
+            const yyyy = now.getFullYear()
+            const mm = String(now.getMonth() + 1).padStart(2, '0')
+            const dd = String(now.getDate()).padStart(2, '0')
+            const defaultFileName = `cursor-usage-${yyyy}${mm}${dd}.csv`
+
+            const uri = await vscode.window.showSaveDialog({
+                defaultUri: vscode.Uri.file(
+                    path.join(
+                        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.homedir(),
+                        defaultFileName
+                    )
+                ),
+                filters: { 'CSV Files': ['csv'] }
+            })
+
+            if (!uri) {
+                return // ユーザーがキャンセル
+            }
+
+            try {
+                const encoder = new TextEncoder()
+                await vscode.workspace.fs.writeFile(uri, encoder.encode(csvContent))
+                vscode.window.showInformationMessage(
+                    `CSV エクスポート完了: ${rows.length} 件 → ${uri.fsPath}`
+                )
+            } catch (err) {
+                const message = err instanceof Error ? err.message : String(err)
+                vscode.window.showErrorMessage(`CSV 書き込み失敗: ${message}`)
+                throw err
+            }
         })
     )
 

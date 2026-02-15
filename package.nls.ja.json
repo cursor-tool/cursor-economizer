@@ -6,6 +6,7 @@
   "commands.refreshData.title": "データ取得",
   "commands.setToken.title": "トークン設定",
   "commands.clearToken.title": "トークン削除",
+  "commands.exportCsv.title": "CSV エクスポート",
   "config.general.title": "Cursor Economizer: 一般",
   "config.goals.title": "Cursor Economizer: 目標",
   "config.table.title": "Cursor Economizer: テーブル",
