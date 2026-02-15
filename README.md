@@ -115,7 +115,8 @@ MIT
 
 この拡張機能が役に立ったら、開発の継続を支援していただけると嬉しいです。
 
-- [Buy Me a Coffee](https://buymeacoffee.com/pacificsystem)
+[![Buy Me A Coffee](https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png)](https://buymeacoffee.com/pacificsystem)
+
 - [GitHub Sponsors](https://github.com/sponsors/cursor-tool)
 
 寄付は任意です。機能やサポート優先度には影響しません。
