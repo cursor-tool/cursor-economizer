@@ -115,8 +115,7 @@ MIT
 
 この拡張機能が役に立ったら、開発の継続を支援していただけると嬉しいです。
 
-<!-- TODO: 寄付リンクを設定後に置き換える -->
-- [Buy Me a Coffee](https://buymeacoffee.com/<your-id>)
-- [GitHub Sponsors](https://github.com/sponsors/<your-id>)
+- [GitHub Sponsors](https://github.com/sponsors/cursor-tool)
+<!-- TODO: Buy Me a Coffee アカウント作成後に追加 -->
 
 寄付は任意です。機能やサポート優先度には影響しません。
