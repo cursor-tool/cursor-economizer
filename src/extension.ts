@@ -1,0 +1,749 @@
+import * as vscode from 'vscode'
+import * as path from 'path'
+import { dbService } from './services/dbService'
+import { tokenService } from './services/tokenService'
+import { statusBarService } from './services/statusBarService'
+import { fetchLockService } from './services/fetchLockService'
+import { webviewService } from './services/webviewService'
+import {
+    apiService,
+    TokenNotConfiguredError,
+    ApiUnauthorizedError,
+    ApiTimeoutError,
+    ApiHttpError,
+    ApiParseError
+} from './services/apiService'
+
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
+    console.log('Cursor Economizer: activating...')
+
+    let dbReady = false
+
+    // ── Phase A: サービス基盤初期化（失敗してもコマンド登録まで必ず到達させる） ──
+    try {
+        // DB 初期化
+        await dbService.initialize(context)
+        dbReady = true
+        console.log('Cursor Economizer: DB initialized')
+
+        // 自動データ削除
+        try {
+            const autoDeleteDays = vscode.workspace
+                .getConfiguration('cursorEconomizer')
+                .get<number>('autoDeleteDays', 90)
+            if (autoDeleteDays > 0) {
+                const deletedCount = dbService.deleteOlderThan(autoDeleteDays)
+                if (deletedCount > 0) {
+                    console.log(
+                        `Cursor Economizer: 自動削除完了 (${deletedCount} 件、${autoDeleteDays} 日超過分)`
+                    )
+                }
+            }
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err)
+            console.error('Cursor Economizer: 自動削除失敗:', message)
+        }
+
+        // FetchLockService 初期化
+        fetchLockService.initialize()
+        console.log('Cursor Economizer: FetchLockService initialized')
+
+        // FileWatcher: db-updated.json の変更を監視
+        const notifPath = fetchLockService.getNotificationFilePath()
+        const watcher = vscode.workspace.createFileSystemWatcher(
+            new vscode.RelativePattern(
+                vscode.Uri.file(path.dirname(notifPath)),
+                path.basename(notifPath)
+            )
+        )
+        const onDbUpdated = () => {
+            dbService.reload()
+            statusBarService.refresh().catch((err2) => {
+                const message = err2 instanceof Error ? err2.message : String(err2)
+                console.error('Cursor Economizer: StatusBar 更新失敗 (FileWatcher):', message)
+            })
+            try {
+                webviewService.sendDataToWebview()
+            } catch (err2) {
+                const message = err2 instanceof Error ? err2.message : String(err2)
+                console.error('Cursor Economizer: Webview 更新失敗 (FileWatcher):', message)
+            }
+        }
+        watcher.onDidChange(onDbUpdated)
+        watcher.onDidCreate(onDbUpdated)
+        context.subscriptions.push(watcher)
+        console.log('Cursor Economizer: FileWatcher registered')
+    } catch (err) {
+        dbReady = false
+        const message = err instanceof Error ? err.message : String(err)
+        console.error('Cursor Economizer: 基盤初期化失敗:', message)
+        vscode.window.showErrorMessage(`Cursor Economizer: 初期化失敗 - ${message}`)
+    }
+
+    // ── Phase B: UI 初期化（Phase A の成否に関わらず必ず実行） ──
+    tokenService.initialize(context)
+    console.log('Cursor Economizer: TokenService initialized')
+
+    statusBarService.initialize()
+    console.log('Cursor Economizer: StatusBarService initialized')
+
+    context.subscriptions.push(
+        tokenService.onTokenChanged(() => {
+            statusBarService.refresh().catch((err) => {
+                const message = err instanceof Error ? err.message : String(err)
+                console.error('Cursor Economizer: StatusBar 更新失敗 (tokenChanged):', message)
+            })
+        })
+    )
+
+    webviewService.initialize(context)
+    console.log('Cursor Economizer: WebviewService initialized')
+
+    // 設定変更を監視
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration((e) => {
+            // 表示設定の変更 → Webview に即時反映
+            if (
+                e.affectsConfiguration('cursorEconomizer.columns') ||
+                e.affectsConfiguration('cursorEconomizer.pageSize') ||
+                e.affectsConfiguration('cursorEconomizer.ecoMeterThreshold')
+            ) {
+                try {
+                    webviewService.sendDataToWebview()
+                } catch (err) {
+                    const message = err instanceof Error ? err.message : String(err)
+                    console.error('Cursor Economizer: Webview 更新失敗 (設定変更):', message)
+                }
+            }
+
+            // 自動取得設定の変更 → タイマー再構成
+            if (
+                e.affectsConfiguration('cursorEconomizer.autoRefreshEnabled') ||
+                e.affectsConfiguration('cursorEconomizer.autoRefreshIntervalMinutes')
+            ) {
+                startOrRestartAutoRefresh()
+            }
+        })
+    )
+
+    // --- 自動取得スケジューラ（activate クロージャスコープ） ---
+
+    /** 自動取得タイマーを（再）起動する。既存タイマーは必ず停止してから再設定する。 */
+    const startOrRestartAutoRefresh = (): void => {
+        // 既存タイマーを確実に停止
+        if (_autoRefreshTimerRef !== undefined) {
+            clearInterval(_autoRefreshTimerRef)
+            _autoRefreshTimerRef = undefined
+        }
+
+        const cfg = vscode.workspace.getConfiguration('cursorEconomizer')
+        const enabled = cfg.get<boolean>('autoRefreshEnabled', true)
+        if (!enabled) {
+            console.log('Cursor Economizer: 自動取得は無効です')
+            return
+        }
+
+        const intervalMin = cfg.get<number>('autoRefreshIntervalMinutes', 3)
+        const intervalMs = intervalMin * 60 * 1000
+
+        _autoRefreshTimerRef = setInterval(() => {
+            vscode.commands
+                .executeCommand('cursorEconomizer.refreshData')
+                .then(undefined, (err) => {
+                    const message = err instanceof Error ? err.message : String(err)
+                    console.error('Cursor Economizer: 自動取得失敗:', message)
+                })
+        }, intervalMs)
+
+        console.log(`Cursor Economizer: 自動取得スケジュール開始 (${intervalMin}分間隔)`)
+    }
+
+    // --- refreshData 多重起動ガード（activate クロージャスコープ） ---
+    let inFlight = false
+
+    // コマンド登録: データ取得（API-A 配線）
+    context.subscriptions.push(
+        vscode.commands.registerCommand('cursorEconomizer.refreshData', async () => {
+            // DB 未初期化時はデータ取得を拒否
+            if (!dbReady) {
+                vscode.window.showErrorMessage(
+                    'DB が初期化されていません。Cursor を再起動してください'
+                )
+                return
+            }
+
+            // 同一ウィンドウ内の多重起動を抑止
+            if (inFlight) {
+                vscode.window.showInformationMessage('データ取得中です')
+                return
+            }
+
+            inFlight = true
+
+            // クロスウィンドウ取得ロック（fetch.lock による排他制御）
+            if (!fetchLockService.acquireLock()) {
+                inFlight = false
+                vscode.window.showInformationMessage('他のウィンドウで取得中です')
+                return
+            }
+
+            // ── バックグラウンド取得が走っているかを追跡するフラグ ──
+            // true の間はロック・inFlight を保持し続ける
+            let backgroundRunning = false
+
+            try {
+                await vscode.window.withProgress(
+                    {
+                        location: vscode.ProgressLocation.Notification,
+                        title: 'Cursor Economizer: データ取得中...',
+                        cancellable: false
+                    },
+                    async () => {
+                        // token 取得（API-A / API-B 共通。並列実行の前に取得）
+                        const token = await tokenService.getToken()
+                        if (!token) {
+                            vscode.window.showWarningMessage(
+                                'トークンが未設定です。コマンド「トークン設定」を実行してください'
+                            )
+                            return
+                        }
+
+                        // ────────────────────────────────────────────
+                        // 初回同期 vs 差分取得の分岐
+                        // ────────────────────────────────────────────
+                        const latest = apiService.getLatestEventTimestamp()
+                        const isInitialSync = latest === null
+
+                        if (isInitialSync) {
+                            // ════════════════════════════════════════
+                            // 初回同期: 先頭1ページ即時表示 + 残りバックグラウンド
+                            // ════════════════════════════════════════
+                            console.log('Cursor Economizer: 初回同期を開始します（段階取得モード）')
+
+                            // Phase 1: 先頭1ページ + API-B/C/E を並列フェッチ
+                            const [resultFirstPage, resultB, resultC, resultE] =
+                                await Promise.allSettled([
+                                    apiService.fetchEventsFirstPage(token),
+                                    apiService.fetchUsageSummary(token),
+                                    apiService.fetchAuthMe(token),
+                                    apiService.fetchTeams(token)
+                                ])
+
+                            // API-D: API-E の結果から teamId を取得して実行
+                            let resultD: PromiseSettledResult<
+                                Awaited<ReturnType<typeof apiService.fetchTeam>>
+                            >
+                            if (
+                                resultE.status === 'fulfilled' &&
+                                resultE.value.teams.length > 0
+                            ) {
+                                const teamId = resultE.value.teams[0].id
+                                resultD = await Promise.allSettled([
+                                    apiService.fetchTeam(token, teamId)
+                                ]).then((r) => r[0])
+                            } else {
+                                resultD = {
+                                    status: 'rejected',
+                                    reason: new Error(
+                                        'teams 取得失敗のため team メンバー取得をスキップ'
+                                    )
+                                }
+                            }
+
+                            // API-C/D/E のフェッチエラーはログ + 通知
+                            const cdeErrors: string[] = []
+                            for (const [label, result] of [
+                                ['API-C (auth/me)', resultC],
+                                ['API-D (dashboard/team)', resultD],
+                                ['API-E (dashboard/teams)', resultE]
+                            ] as const) {
+                                if (result.status === 'rejected') {
+                                    const msg =
+                                        result.reason instanceof Error
+                                            ? result.reason.message
+                                            : String(result.reason)
+                                    console.error(
+                                        `Cursor Economizer: ${label} 取得失敗:`,
+                                        msg
+                                    )
+                                    cdeErrors.push(`${label}: ${msg}`)
+                                }
+                            }
+                            if (cdeErrors.length > 0) {
+                                vscode.window.showWarningMessage(
+                                    `補助API取得失敗: ${cdeErrors.join(' / ')}`
+                                )
+                            }
+
+                            // Phase 2: DB 保存（先頭ページ + 補助 API）
+                            let savedEventCount = 0
+                            let hasMore = false
+                            let firstPageStartDate = ''
+                            let firstPageEndDate = ''
+
+                            if (resultFirstPage.status === 'fulfilled') {
+                                const fp = resultFirstPage.value
+                                apiService.saveEventsToDb(fp.events)
+                                savedEventCount = fp.events.length
+                                hasMore = fp.hasMore
+                                firstPageStartDate = fp.startDate
+                                firstPageEndDate = fp.endDate
+                            }
+                            if (resultB.status === 'fulfilled') {
+                                apiService.saveSummaryToDb(resultB.value)
+                            }
+                            if (resultC.status === 'fulfilled') {
+                                apiService.saveAuthMeToDb(resultC.value)
+                            }
+                            if (resultD.status === 'fulfilled') {
+                                const teamIdForSave =
+                                    resultE.status === 'fulfilled' &&
+                                    resultE.value.teams.length > 0
+                                        ? resultE.value.teams[0].id
+                                        : 0
+                                apiService.saveTeamToDb(resultD.value, teamIdForSave)
+                            }
+                            if (resultE.status === 'fulfilled') {
+                                apiService.saveTeamsToDb(resultE.value)
+                            }
+
+                            // Phase 3: 結果通知（先頭ページ分）
+                            if (
+                                resultFirstPage.status === 'fulfilled' &&
+                                resultB.status === 'fulfilled'
+                            ) {
+                                const moreMsg = hasMore ? '（残りをバックグラウンドで取得中...）' : ''
+                                vscode.window.showInformationMessage(
+                                    `データ取得完了: イベント${savedEventCount}件 / サマリ更新済み${moreMsg}`
+                                )
+                            } else if (
+                                resultFirstPage.status === 'fulfilled' &&
+                                resultB.status === 'rejected'
+                            ) {
+                                const bMsg =
+                                    resultB.reason instanceof Error
+                                        ? resultB.reason.message
+                                        : String(resultB.reason)
+                                console.error(
+                                    'Cursor Economizer: API-B (usage-summary) 取得失敗:',
+                                    bMsg
+                                )
+                                vscode.window.showWarningMessage(
+                                    `イベント${savedEventCount}件取得済み。サマリ取得に失敗しました`
+                                )
+                            } else if (
+                                resultFirstPage.status === 'rejected' &&
+                                resultB.status === 'fulfilled'
+                            ) {
+                                const aMsg =
+                                    resultFirstPage.reason instanceof Error
+                                        ? resultFirstPage.reason.message
+                                        : String(resultFirstPage.reason)
+                                console.error(
+                                    'Cursor Economizer: API-A (usage-events) 取得失敗:',
+                                    aMsg
+                                )
+                                vscode.window.showWarningMessage(
+                                    'サマリ更新済み。イベント取得に失敗しました'
+                                )
+                                throw resultFirstPage.reason
+                            } else {
+                                const bMsg =
+                                    resultB.status === 'rejected'
+                                        ? resultB.reason instanceof Error
+                                            ? resultB.reason.message
+                                            : String(resultB.reason)
+                                        : ''
+                                console.error(
+                                    'Cursor Economizer: API-B (usage-summary) 取得失敗:',
+                                    bMsg
+                                )
+                                throw (resultFirstPage as PromiseRejectedResult).reason
+                            }
+
+                            // ── バックグラウンドで残りページを取得 ──
+                            if (
+                                hasMore &&
+                                resultFirstPage.status === 'fulfilled'
+                            ) {
+                                backgroundRunning = true
+                                console.log(
+                                    'Cursor Economizer: 残りページをバックグラウンドで取得開始'
+                                )
+
+                                // fire-and-forget（withProgress の外で非同期実行）
+                                apiService
+                                    .fetchEventsRemainingPages(
+                                        token,
+                                        firstPageStartDate,
+                                        firstPageEndDate,
+                                        2
+                                    )
+                                    .then((remainingEvents) => {
+                                        if (remainingEvents.length > 0) {
+                                            apiService.saveEventsToDb(remainingEvents)
+                                            console.log(
+                                                `Cursor Economizer: バックグラウンド取得完了 (${remainingEvents.length}件追加)`
+                                            )
+                                            vscode.window.showInformationMessage(
+                                                `バックグラウンド取得完了: ${remainingEvents.length}件追加 (合計${savedEventCount + remainingEvents.length}件)`
+                                            )
+                                        } else {
+                                            console.log(
+                                                'Cursor Economizer: バックグラウンド取得完了 (追加イベントなし)'
+                                            )
+                                        }
+                                    })
+                                    .catch((bgErr) => {
+                                        // エラー握りつぶし禁止: ログ + ユーザー通知
+                                        const bgMsg =
+                                            bgErr instanceof Error
+                                                ? bgErr.message
+                                                : String(bgErr)
+                                        console.error(
+                                            'Cursor Economizer: バックグラウンド取得失敗:',
+                                            bgMsg
+                                        )
+                                        vscode.window.showWarningMessage(
+                                            `バックグラウンドのデータ取得に失敗しました: ${bgMsg}`
+                                        )
+                                    })
+                                    .finally(() => {
+                                        // バックグラウンド完了後にロック・フラグを解放
+                                        backgroundRunning = false
+                                        fetchLockService.releaseLock()
+                                        inFlight = false
+
+                                        // UI 更新
+                                        statusBarService.refresh().catch((err2) => {
+                                            const msg =
+                                                err2 instanceof Error
+                                                    ? err2.message
+                                                    : String(err2)
+                                            console.error(
+                                                'Cursor Economizer: StatusBar 更新失敗 (background finally):',
+                                                msg
+                                            )
+                                        })
+                                        try {
+                                            webviewService.sendDataToWebview()
+                                        } catch (err2) {
+                                            const msg =
+                                                err2 instanceof Error
+                                                    ? err2.message
+                                                    : String(err2)
+                                            console.error(
+                                                'Cursor Economizer: Webview 更新失敗 (background finally):',
+                                                msg
+                                            )
+                                        }
+
+                                        startOrRestartAutoRefresh()
+                                        console.log(
+                                            'Cursor Economizer: バックグラウンド処理のクリーンアップ完了'
+                                        )
+                                    })
+                            }
+                        } else {
+                            // ════════════════════════════════════════
+                            // 差分取得: 既存フロー（通常少量のため同期実行）
+                            // ════════════════════════════════════════
+                            console.log(
+                                `Cursor Economizer: 差分取得を開始します (since: ${latest})`
+                            )
+
+                            // Phase 1: API-A(差分) + B/C/E を並列フェッチ
+                            const [resultA, resultB, resultC, resultE] =
+                                await Promise.allSettled([
+                                    apiService.fetchDeltaEvents(token, latest),
+                                    apiService.fetchUsageSummary(token),
+                                    apiService.fetchAuthMe(token),
+                                    apiService.fetchTeams(token)
+                                ])
+
+                            // API-D: API-E の結果から teamId を取得して実行
+                            let resultD: PromiseSettledResult<
+                                Awaited<ReturnType<typeof apiService.fetchTeam>>
+                            >
+                            if (
+                                resultE.status === 'fulfilled' &&
+                                resultE.value.teams.length > 0
+                            ) {
+                                const teamId = resultE.value.teams[0].id
+                                resultD = await Promise.allSettled([
+                                    apiService.fetchTeam(token, teamId)
+                                ]).then((r) => r[0])
+                            } else {
+                                resultD = {
+                                    status: 'rejected',
+                                    reason: new Error(
+                                        'teams 取得失敗のため team メンバー取得をスキップ'
+                                    )
+                                }
+                            }
+
+                            // API-C/D/E のフェッチエラーはログ + 通知
+                            const cdeErrors: string[] = []
+                            for (const [label, result] of [
+                                ['API-C (auth/me)', resultC],
+                                ['API-D (dashboard/team)', resultD],
+                                ['API-E (dashboard/teams)', resultE]
+                            ] as const) {
+                                if (result.status === 'rejected') {
+                                    const msg =
+                                        result.reason instanceof Error
+                                            ? result.reason.message
+                                            : String(result.reason)
+                                    console.error(
+                                        `Cursor Economizer: ${label} 取得失敗:`,
+                                        msg
+                                    )
+                                    cdeErrors.push(`${label}: ${msg}`)
+                                }
+                            }
+                            if (cdeErrors.length > 0) {
+                                vscode.window.showWarningMessage(
+                                    `補助API取得失敗: ${cdeErrors.join(' / ')}`
+                                )
+                            }
+
+                            // Phase 2: DB 保存
+                            let savedEventCount = 0
+                            if (resultA.status === 'fulfilled') {
+                                apiService.saveEventsToDb(resultA.value)
+                                savedEventCount = resultA.value.length
+                            }
+                            if (resultB.status === 'fulfilled') {
+                                apiService.saveSummaryToDb(resultB.value)
+                            }
+                            if (resultC.status === 'fulfilled') {
+                                apiService.saveAuthMeToDb(resultC.value)
+                            }
+                            if (resultD.status === 'fulfilled') {
+                                const teamIdForSave =
+                                    resultE.status === 'fulfilled' &&
+                                    resultE.value.teams.length > 0
+                                        ? resultE.value.teams[0].id
+                                        : 0
+                                apiService.saveTeamToDb(resultD.value, teamIdForSave)
+                            }
+                            if (resultE.status === 'fulfilled') {
+                                apiService.saveTeamsToDb(resultE.value)
+                            }
+
+                            // Phase 3: 結果通知（差分取得は成功時ログのみ。警告・エラーは通知）
+                            if (
+                                resultA.status === 'fulfilled' &&
+                                resultB.status === 'fulfilled'
+                            ) {
+                                // 差分取得の成功はログのみ（StatusBar で確認可能。通知蓄積を防止）
+                                console.log(
+                                    `Cursor Economizer: 差分取得完了 イベント${savedEventCount}件 / サマリ更新済み`
+                                )
+                            } else if (
+                                resultA.status === 'fulfilled' &&
+                                resultB.status === 'rejected'
+                            ) {
+                                const bMsg =
+                                    resultB.reason instanceof Error
+                                        ? resultB.reason.message
+                                        : String(resultB.reason)
+                                console.error(
+                                    'Cursor Economizer: API-B (usage-summary) 取得失敗:',
+                                    bMsg
+                                )
+                                vscode.window.showWarningMessage(
+                                    `イベント${savedEventCount}件取得済み。サマリ取得に失敗しました`
+                                )
+                            } else if (
+                                resultA.status === 'rejected' &&
+                                resultB.status === 'fulfilled'
+                            ) {
+                                const aMsg =
+                                    resultA.reason instanceof Error
+                                        ? resultA.reason.message
+                                        : String(resultA.reason)
+                                console.error(
+                                    'Cursor Economizer: API-A (usage-events) 取得失敗:',
+                                    aMsg
+                                )
+                                vscode.window.showWarningMessage(
+                                    'サマリ更新済み。イベント取得に失敗しました'
+                                )
+                                throw resultA.reason
+                            } else {
+                                const bMsg =
+                                    resultB.status === 'rejected'
+                                        ? resultB.reason instanceof Error
+                                            ? resultB.reason.message
+                                            : String(resultB.reason)
+                                        : ''
+                                console.error(
+                                    'Cursor Economizer: API-B (usage-summary) 取得失敗:',
+                                    bMsg
+                                )
+                                throw (resultA as PromiseRejectedResult).reason
+                            }
+                        }
+                    }
+                )
+            } catch (err) {
+                // エラー通知マッピング（code ベースで分類）
+                if (err instanceof TokenNotConfiguredError) {
+                    vscode.window.showWarningMessage(
+                        'トークンが未設定です。コマンド「トークン設定」を実行してください'
+                    )
+                } else if (err instanceof ApiUnauthorizedError) {
+                    vscode.window.showErrorMessage(
+                        'トークンが無効または期限切れです。再設定してください'
+                    )
+                } else if (err instanceof ApiTimeoutError) {
+                    vscode.window.showErrorMessage(
+                        'APIタイムアウト。時間をおいて再実行してください'
+                    )
+                } else if (err instanceof ApiHttpError) {
+                    vscode.window.showErrorMessage(`APIエラー (HTTP ${err.statusCode})`)
+                } else if (err instanceof ApiParseError) {
+                    vscode.window.showErrorMessage('APIレスポンスの解析に失敗しました')
+                } else {
+                    const message = err instanceof Error ? err.message : String(err)
+                    vscode.window.showErrorMessage(`データ取得失敗: ${message}`)
+                }
+
+                // エラーはログに記録（token 値は出力しない）
+                const logMessage = err instanceof Error ? err.message : String(err)
+                console.error('Cursor Economizer: refreshData failed:', logMessage)
+            } finally {
+                // バックグラウンド取得が走っている場合は、ロック・フラグの解放をバックグラウンド側に委譲する
+                // バックグラウンドの .finally() で releaseLock / inFlight=false / UI 更新を行う
+                if (!backgroundRunning) {
+                    // バックグラウンドなし: 即座にクリーンアップ
+                    fetchLockService.releaseLock()
+                    inFlight = false
+
+                    statusBarService.refresh().catch((err) => {
+                        const message = err instanceof Error ? err.message : String(err)
+                        console.error(
+                            'Cursor Economizer: StatusBar 更新失敗 (refreshData finally):',
+                            message
+                        )
+                    })
+
+                    try {
+                        webviewService.sendDataToWebview()
+                    } catch (err) {
+                        const message = err instanceof Error ? err.message : String(err)
+                        console.error(
+                            'Cursor Economizer: Webview 更新失敗 (refreshData finally):',
+                            message
+                        )
+                    }
+
+                    startOrRestartAutoRefresh()
+                } else {
+                    // バックグラウンド実行中: ロック保持のまま、UI のみ先行更新
+                    console.log(
+                        'Cursor Economizer: バックグラウンド取得中のため、ロック・フラグは保持します'
+                    )
+
+                    statusBarService.refresh().catch((err) => {
+                        const message = err instanceof Error ? err.message : String(err)
+                        console.error(
+                            'Cursor Economizer: StatusBar 更新失敗 (refreshData finally, bg running):',
+                            message
+                        )
+                    })
+
+                    try {
+                        webviewService.sendDataToWebview()
+                    } catch (err) {
+                        const message = err instanceof Error ? err.message : String(err)
+                        console.error(
+                            'Cursor Economizer: Webview 更新失敗 (refreshData finally, bg running):',
+                            message
+                        )
+                    }
+                }
+            }
+        })
+    )
+
+    // コマンド登録: トークン設定
+    context.subscriptions.push(
+        vscode.commands.registerCommand('cursorEconomizer.setToken', async () => {
+            const value = await vscode.window.showInputBox({
+                prompt: 'WorkosCursorSessionToken の値を入力',
+                password: true,
+                ignoreFocusOut: true
+            })
+
+            // キャンセルまたは空文字の場合は何もしない
+            if (!value) {
+                return
+            }
+
+            try {
+                await tokenService.setToken(value)
+                vscode.window.showInformationMessage('トークンを保存しました')
+            } catch (err) {
+                const message = err instanceof Error ? err.message : String(err)
+                vscode.window.showErrorMessage(`トークン保存失敗: ${message}`)
+                throw err
+            }
+        })
+    )
+
+    // コマンド登録: トークン削除
+    context.subscriptions.push(
+        vscode.commands.registerCommand('cursorEconomizer.clearToken', async () => {
+            const choice = await vscode.window.showWarningMessage(
+                'トークンを削除しますか？',
+                '削除',
+                'キャンセル'
+            )
+
+            if (choice !== '削除') {
+                return
+            }
+
+            try {
+                await tokenService.clearToken()
+                vscode.window.showInformationMessage('トークンを削除しました')
+            } catch (err) {
+                const message = err instanceof Error ? err.message : String(err)
+                vscode.window.showErrorMessage(`トークン削除失敗: ${message}`)
+                throw err
+            }
+        })
+    )
+
+    // コマンド登録: 詳細 Webview 起動
+    context.subscriptions.push(
+        vscode.commands.registerCommand('cursorEconomizer.openDetail', () => {
+            webviewService.openPanel()
+        })
+    )
+
+    // 自動取得タイマー初回起動
+    startOrRestartAutoRefresh()
+
+    console.log('Cursor Economizer: activated')
+}
+
+// autoRefreshTimer はモジュールスコープに昇格（deactivate からアクセスするため）
+let _autoRefreshTimerRef: ReturnType<typeof setInterval> | undefined
+
+export function deactivate(): void {
+    // クリーンアップ順序: 初期化の逆順
+    // 自動取得タイマー停止（最優先で解放）
+    if (_autoRefreshTimerRef !== undefined) {
+        clearInterval(_autoRefreshTimerRef)
+        _autoRefreshTimerRef = undefined
+    }
+    fetchLockService.releaseLock()
+    webviewService.dispose()
+    statusBarService.dispose()
+    tokenService.dispose()
+    dbService.close()
+    console.log('Cursor Economizer: deactivated')
+}
