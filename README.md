@@ -31,6 +31,8 @@ Track your Cursor AI usage costs with detailed breakdowns, billing cycle trackin
 3. コピーしたトークンを貼り付け
 4. ステータスバーに利用状況が表示されます
 
+> トークンは VS Code の SecretStorage に暗号化して保存されます。設定画面・ログ・Webview にトークンが露出することはありません。
+
 ## Features
 
 - **ステータスバー表示** — 課金サイクル内の利用率・累積金額をリアルタイム表示
