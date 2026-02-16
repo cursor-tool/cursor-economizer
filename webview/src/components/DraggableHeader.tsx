@@ -42,7 +42,8 @@ export default function DraggableHeader({
             ? { ...thStyle, padding: '4px 2px', textAlign: 'center' }
             : thStyle),
         width: header.getSize(),
-        position: 'relative',
+        // position: 'sticky' は thStyle から継承。sticky は包含ブロックを形成するため
+        // リサイザー等の absolute 子要素も正しく配置される。
         transform: transform ? `translate3d(${transform.x}px, 0, 0)` : undefined,
         transition,
         opacity: isDragging ? 0.8 : 1,

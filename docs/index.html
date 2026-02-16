@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cursor Economizer — cursor-tool</title>
+  <meta name="description" content="Cursor の利用料金を確認・分析する VS Code 拡張機能">
+  <link rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.1/github-markdown-dark.min.css"
+    integrity="sha512-MmiBOcEAKIycIBueaYCkGMKFzXMZsHlRQOamsVGPhAzRMDGpVBCMOHJN3MqHDAbiPi6UsAgjhMD3h+eBnPQHYw=="
+    crossorigin="anonymous" referrerpolicy="no-referrer">
+  <style>
+    body {
+      background: #0d1117;
+      color: #e6edf3;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    }
+    .markdown-body {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 32px 24px;
+    }
+    .markdown-body img { max-width: 100%; }
+    .site-footer {
+      max-width: 980px;
+      margin: 48px auto 0;
+      padding: 24px;
+      border-top: 1px solid #30363d;
+      text-align: center;
+      font-size: 13px;
+      color: #8b949e;
+    }
+    .site-footer a { color: #8b949e; text-decoration: none; }
+    .site-footer a:hover { color: #58a6ff; }
+    .loading { text-align: center; padding: 80px 24px; color: #8b949e; }
+  </style>
+</head>
+<body>
+  <article class="markdown-body" id="content">
+    <div class="loading">読み込み中...</div>
+  </article>
+  <footer class="site-footer">
+    <a href="https://pacific-system.tokyo" target="_blank" rel="noopener">
+      Pacific System
+    </a>
+  </footer>
+  <script
+    src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"
+    integrity="sha512-pSBnpkAT4NHKL0A0mFLEcMqAoMmaDdNGpbOJx+RhYu6a09VBiKFF8p3OAFM1MmMdEMlQFnpMnMPOFKMFUT2g=="
+    crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script>
+    var REPO = 'cursor-tool/cursor-economizer';
+    var BRANCH = 'main';
+    var RAW = 'https://raw.githubusercontent.com/' + REPO + '/' + BRANCH;
+
+    fetch(RAW + '/README.md')
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+      .then(function (md) {
+        var resolved = md.replace(
+          /!\[([^\]]*)\]\((?!https?:\/\/)([^)]+)\)/g,
+          function (_, alt, path) { return '![' + alt + '](' + RAW + '/' + path + ')'; }
+        );
+        document.getElementById('content').innerHTML = marked.parse(resolved);
+      })
+      .catch(function () {
+        document.getElementById('content').innerHTML =
+          '<p style="text-align:center;color:#f85149;">README の読み込みに失敗しました。</p>';
+      });
+  </script>
+</body>
+</html>

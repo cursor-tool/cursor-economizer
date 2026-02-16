@@ -4,6 +4,16 @@ All notable changes to "Cursor Economizer" will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.9] - 2026-02-16
+
+### Fixed
+
+- テーブルヘッダーの sticky が無効になっていた不具合を修正 — スクロール時にヘッダー行が上部に固定されるよう復元
+
+### Improved
+
+- 公開スクリプトに staging リポジトリ検証を追加 — 誤って開発リポジトリから直接公開した場合に警告して中断
+
 ## [0.1.8] - 2026-02-16
 
 ### Added
