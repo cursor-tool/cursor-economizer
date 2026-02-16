@@ -399,6 +399,7 @@ export default function App() {
                         pageSize={pageSize}
                         autoRefreshEnabled={autoRefreshEnabled}
                         autoRefreshIntervalMinutes={autoRefreshIntervalMinutes}
+                        isLoading={isLoading}
                     />
                 </>
             )}

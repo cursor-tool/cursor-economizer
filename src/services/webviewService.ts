@@ -144,6 +144,18 @@ class WebviewService {
                     }
                 )
                 break
+            case 'requestRefresh':
+                vscode.commands.executeCommand('cursorEconomizer.refreshData').then(
+                    undefined,
+                    (err) => {
+                        const message = err instanceof Error ? err.message : String(err)
+                        console.error(
+                            'Cursor Economizer: Webview からの requestRefresh 失敗:',
+                            message
+                        )
+                    }
+                )
+                break
             default:
                 console.warn(`Cursor Economizer: Webview から未知のメッセージタイプ: ${type}`)
                 break
