@@ -10,10 +10,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - テーブルヘッダーの sticky が無効になっていた不具合を修正 — スクロール時にヘッダー行が上部に固定されるよう復元
 
-### Improved
-
-- 公開スクリプトに staging リポジトリ検証を追加 — 誤って開発リポジトリから直接公開した場合に警告して中断
-
 ## [0.1.8] - 2026-02-16
 
 ### Added
@@ -40,7 +36,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 - **CSV エクスポート** — 利用データを CSV 形式でダウンロード（RFC 4180 準拠 / BOM 付き UTF-8）
 - ステータスバーのツールチップに CSV エクスポートへのショートカットを追加
-- README にステータスバー機能の詳細説明を追加
 
 ## [0.1.3] - 2026-02-15
 
@@ -56,10 +51,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 
-- GitHub Issue テンプレート（Bug Report / Feature Request）
-- Pull Request テンプレート
-- CONTRIBUTING.md / CODE_OF_CONDUCT.md
-- README に Roadmap / Support セクションを追加
+- バグ報告・機能要望の Issue テンプレートを追加
 
 ## [0.1.1] - 2026-02-15
 
