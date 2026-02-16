@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 
 
+## [0.1.6] - 2026-02-16
+
+### Improved
+
+- テーブル行にホバーハイライトを追加 — マウスオーバーで対象行が視覚的に強調され、大量データ閲覧時の可読性を向上
+
 ## [0.1.5] - 2026-02-16
 
 ### Added

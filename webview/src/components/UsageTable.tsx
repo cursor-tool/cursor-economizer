@@ -566,6 +566,9 @@ export default function UsageTable({
 
     return (
         <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <style>{`
+                .ce-row:hover { background: var(--vscode-list-hoverBackground, rgba(255,255,255,0.04)); }
+            `}</style>
             {/* ── テーブル ── */}
             <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
                 <table style={tableStyle}>
@@ -620,7 +623,7 @@ export default function UsageTable({
                     </thead>
                     <tbody>
                         {table.getRowModel().rows.map((row) => (
-                            <tr key={row.id}>
+                            <tr key={row.id} className="ce-row">
                                 {row.getVisibleCells().map((cell) => {
                                     const isIndicator = cell.column.id === 'cost_indicator'
                                     return (
