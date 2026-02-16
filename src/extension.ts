@@ -180,10 +180,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
 
             inFlight = true
+            webviewService.postToWebview({ type: 'loading', isLoading: true })
 
             // クロスウィンドウ取得ロック（fetch.lock による排他制御）
             if (!fetchLockService.acquireLock()) {
                 inFlight = false
+                webviewService.postToWebview({ type: 'loading', isLoading: false })
                 vscode.window.showInformationMessage('他のウィンドウで取得中です')
                 return
             }
@@ -414,6 +416,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                                         backgroundRunning = false
                                         fetchLockService.releaseLock()
                                         inFlight = false
+                                        webviewService.postToWebview({
+                                            type: 'loading',
+                                            isLoading: false
+                                        })
 
                                         // UI 更新
                                         statusBarService.refresh().catch((err2) => {
@@ -621,6 +627,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // バックグラウンドなし: 即座にクリーンアップ
                     fetchLockService.releaseLock()
                     inFlight = false
+                    webviewService.postToWebview({ type: 'loading', isLoading: false })
 
                     statusBarService.refresh().catch((err) => {
                         const message = err instanceof Error ? err.message : String(err)

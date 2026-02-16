@@ -156,6 +156,11 @@ class WebviewService {
                     }
                 )
                 break
+            case 'saveColumnOrder':
+                this.handleSaveColumnOrder(
+                    msg as { type: string; columnOrder: string[] }
+                )
+                break
             default:
                 console.warn(`Cursor Economizer: Webview から未知のメッセージタイプ: ${type}`)
                 break
@@ -215,6 +220,45 @@ class WebviewService {
             this.postToWebview({
                 type: 'error',
                 message: `メモの更新に失敗しました: ${message}`
+            })
+        }
+    }
+
+    /**
+     * カラム並び順保存ハンドラ。
+     * Webview から saveColumnOrder を受信し、DB の table_settings に保存する。
+     *
+     * - DB 書込パターン: reload() → getDb().run(REPLACE) → persist()
+     * - persist() は db-updated.json タッチ処理を含む → 他 Window に通知される
+     * - 失敗時: error メッセージで Webview にエラー通知
+     */
+    private handleSaveColumnOrder(msg: {
+        type: string
+        columnOrder: string[]
+    }): void {
+        const { columnOrder } = msg
+
+        try {
+            dbService.reload()
+            const db = dbService.getDb()
+
+            db.run(
+                'REPLACE INTO table_settings (key, value) VALUES (?, ?)',
+                ['column_order', JSON.stringify(columnOrder)]
+            )
+
+            dbService.persist()
+
+            console.log(
+                `Cursor Economizer: カラム並び順保存完了 (${columnOrder.length} columns)`
+            )
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'カラム並び順の保存に失敗しました'
+            console.error('Cursor Economizer: カラム並び順保存失敗:', err)
+
+            this.postToWebview({
+                type: 'error',
+                message: `カラム並び順の保存に失敗しました: ${message}`
             })
         }
     }
@@ -324,6 +368,20 @@ class WebviewService {
             cursor_token_fee: cfg.get<boolean>('columns.fee.visible', false)
         }
 
+        // ── columnOrder: table_settings から読み取り ──
+        let columnOrder: string[] | undefined
+        try {
+            const orderResult = db.exec(
+                "SELECT value FROM table_settings WHERE key = 'column_order'"
+            )
+            if (orderResult.length > 0 && orderResult[0].values.length > 0) {
+                columnOrder = JSON.parse(orderResult[0].values[0][0] as string)
+            }
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err)
+            console.error('Cursor Economizer: columnOrder 読み取り失敗:', message)
+        }
+
         console.log(
             `Cursor Economizer: sendDataToWebview totalCount=${totalCount}, events.length=${events.length}, summary=${summary ? 'yes' : 'null'}, myRole=${myRole}, userMap keys=${Object.keys(userMap).length}`
         )
@@ -348,7 +406,8 @@ class WebviewService {
             autoRefreshIntervalMinutes,
             ecoMeterThreshold,
             dailyUsageGoal,
-            monthlyBudgetGoal
+            monthlyBudgetGoal,
+            columnOrder
         })
     }
 

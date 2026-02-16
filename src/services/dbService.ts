@@ -108,6 +108,14 @@ CREATE TABLE IF NOT EXISTS team_members (
 );
 `
 
+/** table_settings テーブル（カラム並び順などの UI 設定を永続化） */
+const SCHEMA_TABLE_SETTINGS = `
+CREATE TABLE IF NOT EXISTS table_settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+`
+
 /** teams テーブル（API-E: /api/dashboard/teams） */
 const SCHEMA_TEAMS = `
 CREATE TABLE IF NOT EXISTS teams (
@@ -176,6 +184,7 @@ class DbService {
         this.db.run(SCHEMA_AUTH_ME)
         this.db.run(SCHEMA_TEAM_MEMBERS)
         this.db.run(SCHEMA_TEAMS)
+        this.db.run(SCHEMA_TABLE_SETTINGS)
 
         // ── マイグレーション: team_members に team_id カラム追加 ──
         this.migrateTeamMembersTeamId()

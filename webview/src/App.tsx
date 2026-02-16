@@ -248,6 +248,8 @@ export default function App() {
     const [userMap, setUserMap] = useState<Record<string, string>>(IS_BROWSER ? MOCK_USER_MAP : {})
     const [userName, setUserName] = useState<string | null>(IS_BROWSER ? 'Demo User A' : null)
     const [isLoading, setIsLoading] = useState(!IS_BROWSER)
+    /** 初回データ読み込みが完了したか（true 以降はコンポーネントをアンマウントしない） */
+    const [hasData, setHasData] = useState(IS_BROWSER)
     const [error, setError] = useState<string | null>(null)
     const [pageSize, setPageSize] = useState(500)
     const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true)
@@ -265,6 +267,8 @@ export default function App() {
         owning_user: IS_BROWSER,
         cursor_token_fee: IS_BROWSER
     })
+    /** カラム並び順（クロスウィンドウ共通・DB 永続化）。空配列はデフォルト順を使用 */
+    const [columnOrder, setColumnOrder] = useState<string[]>([])
 
     // ── Extension Host → Webview メッセージ受信 ──────────────
     const handleMessage = useCallback((event: MessageEvent<HostToWebviewMessage>) => {
@@ -298,7 +302,11 @@ export default function App() {
                 if (data.monthlyBudgetGoal !== undefined) {
                     setMonthlyBudgetGoal(data.monthlyBudgetGoal)
                 }
+                if (data.columnOrder) {
+                    setColumnOrder(data.columnOrder)
+                }
                 setIsLoading(false)
+                setHasData(true)
                 setError(null)
                 break
             }
@@ -334,6 +342,12 @@ export default function App() {
             window.removeEventListener('message', handleMessage)
         }
     }, [handleMessage])
+
+    // ── カラム並び順変更ハンドラ（DnD 完了時に呼ばれる） ──
+    const handleColumnOrderChange = useCallback((newOrder: string[]) => {
+        setColumnOrder(newOrder)
+        postMessage({ type: 'saveColumnOrder', columnOrder: newOrder })
+    }, [])
 
     // ── 初回マウント時にデータ要求 ──────────────────────────
     useEffect(() => {
@@ -376,13 +390,13 @@ export default function App() {
                 overflow: 'hidden'
             }}
         >
-            {isLoading && <p>読み込み中…</p>}
+            {!hasData && isLoading && <p>読み込み中…</p>}
 
             {error && (
                 <p style={{ color: 'var(--vscode-errorForeground, #f44)' }}>エラー: {error}</p>
             )}
 
-            {!isLoading && !error && (
+            {hasData && (
                 <>
                     {summary && (
                         <SummaryCard
@@ -400,6 +414,8 @@ export default function App() {
                         autoRefreshEnabled={autoRefreshEnabled}
                         autoRefreshIntervalMinutes={autoRefreshIntervalMinutes}
                         isLoading={isLoading}
+                        columnOrder={columnOrder.length > 0 ? columnOrder : undefined}
+                        onColumnOrderChange={handleColumnOrderChange}
                     />
                 </>
             )}

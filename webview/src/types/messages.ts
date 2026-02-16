@@ -108,6 +108,8 @@ export interface DataLoadedMessage {
     dailyUsageGoal: number
     /** 月次予算目標額（ドル）。0 = 目標なし */
     monthlyBudgetGoal: number
+    /** カラム並び順（DB 永続化・クロスウィンドウ共通）。未設定時は省略 */
+    columnOrder?: string[]
 }
 
 /** Extension Host → Webview: ローディング状態通知 */
@@ -152,6 +154,12 @@ export interface RequestRefreshMessage {
     type: 'requestRefresh'
 }
 
+/** Webview → Extension Host: カラム並び順保存（クロスウィンドウ共通） */
+export interface SaveColumnOrderMessage {
+    type: 'saveColumnOrder'
+    columnOrder: string[]
+}
+
 // --- ユニオン型 ---
 
 /** Extension Host → Webview の全メッセージ型 */
@@ -162,4 +170,8 @@ export type HostToWebviewMessage =
     | MemoUpdatedMessage
 
 /** Webview → Extension Host の全メッセージ型 */
-export type WebviewToHostMessage = RequestDataMessage | UpdateMemoMessage | RequestRefreshMessage
+export type WebviewToHostMessage =
+    | RequestDataMessage
+    | UpdateMemoMessage
+    | RequestRefreshMessage
+    | SaveColumnOrderMessage

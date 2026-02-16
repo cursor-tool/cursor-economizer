@@ -13,11 +13,17 @@ import {
     createColumnHelper,
     flexRender
 } from '@tanstack/react-table'
-import { useMemo, useState, useEffect } from 'react'
-import type { FilterFn } from '@tanstack/react-table'
+import { useMemo, useState, useEffect, useCallback } from 'react'
+import type { FilterFn, ColumnSizingState } from '@tanstack/react-table'
 import type { WebviewUsageEventRow, ColumnVisibilityConfig } from '../types/messages'
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
+import type { DragEndEvent } from '@dnd-kit/core'
+import { SortableContext, horizontalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
+import { restrictToHorizontalAxis } from '@dnd-kit/modifiers'
 import ColumnFilter from './ColumnFilter'
 import MemoCell from './MemoCell'
+import DraggableHeader from './DraggableHeader'
+import DragAlongCell from './DragAlongCell'
 import { postMessage } from '../hooks/useVsCodeApi'
 import { VscRefresh } from 'react-icons/vsc'
 
@@ -362,6 +368,7 @@ function buildColumns(userMap: Record<string, string>) {
 
 const tableStyle: React.CSSProperties = {
     borderCollapse: 'collapse',
+    tableLayout: 'fixed',
     width: '100%',
     fontSize: '12px'
 }
@@ -384,8 +391,7 @@ const tdStyle: React.CSSProperties = {
     padding: '3px 8px',
     whiteSpace: 'nowrap',
     overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    maxWidth: '200px'
+    textOverflow: 'ellipsis'
 }
 
 const btnStyle: React.CSSProperties = {
@@ -446,7 +452,9 @@ export default function UsageTable({
     pageSize = 500,
     autoRefreshEnabled = true,
     autoRefreshIntervalMinutes = 3,
-    isLoading = false
+    isLoading = false,
+    columnOrder: columnOrderProp,
+    onColumnOrderChange
 }: {
     data: WebviewUsageEventRow[]
     /** owning_user ID → 表示名のマッピング */
@@ -461,6 +469,10 @@ export default function UsageTable({
     autoRefreshIntervalMinutes?: number
     /** Extension Host 側のローディング状態（更新ボタン制御用） */
     isLoading?: boolean
+    /** カラム並び順（クロスウィンドウ共通・DB 永続化） */
+    columnOrder?: string[]
+    /** カラム並び順変更時のコールバック */
+    onColumnOrderChange?: (newOrder: string[]) => void
 }) {
     // ── userMap に依存するカラム定義を useMemo で生成 ──────────
     const columns = useMemo(() => buildColumns(userMap), [userMap])
@@ -551,117 +563,192 @@ export default function UsageTable({
         setPagination((prev) => ({ ...prev, pageSize, pageIndex: 0 }))
     }, [pageSize])
 
+    // ── カラムリサイズ state（ウィンドウローカル・永続化なし） ──
+    const [columnSizing, setColumnSizing] = useState<ColumnSizingState>({})
+
+    // ── カラム並び順（クロスウィンドウ共通・DB 永続化） ──
+    // デフォルトのカラム ID 順を算出（buildColumns の定義順）
+    const defaultColumnOrder = useMemo(
+        () => columns.map((c) => ('accessorKey' in c ? (c.accessorKey as string) : c.id!)),
+        [columns]
+    )
+    // props から受け取った columnOrder を使用。未知カラムは末尾に自動追加する防御ロジック
+    const effectiveColumnOrder = useMemo(() => {
+        if (!columnOrderProp || columnOrderProp.length === 0) return defaultColumnOrder
+        const known = new Set(defaultColumnOrder)
+        const ordered = columnOrderProp.filter((id) => known.has(id))
+        const missing = defaultColumnOrder.filter((id) => !columnOrderProp.includes(id))
+        return [...ordered, ...missing]
+    }, [columnOrderProp, defaultColumnOrder])
+
     const table = useReactTable({
         data,
         columns,
         getCoreRowModel: getCoreRowModel(),
         getFilteredRowModel: getFilteredRowModel(),
         getPaginationRowModel: getPaginationRowModel(),
+        enableColumnResizing: true,
+        columnResizeMode: 'onChange',
         state: {
             columnVisibility: visibilityState,
-            pagination
+            pagination,
+            columnSizing,
+            columnOrder: effectiveColumnOrder
         },
-        onPaginationChange: setPagination
+        onPaginationChange: setPagination,
+        onColumnSizingChange: setColumnSizing
     })
+
+    // ── DnD センサー（10px の活性化距離でクリックと区別） ──
+    const sensors = useSensors(
+        useSensor(PointerSensor, { activationConstraint: { distance: 10 } })
+    )
+
+    // ── DnD ドラッグ中フラグ（行ホバー無効化・ポインターイベント透過防止用） ──
+    const [isDraggingColumn, setIsDraggingColumn] = useState(false)
+
+    const handleDragStart = useCallback(() => {
+        setIsDraggingColumn(true)
+    }, [])
+
+    const handleDragEnd = useCallback(
+        (event: DragEndEvent) => {
+            setIsDraggingColumn(false)
+            const { active, over } = event
+            if (!over || active.id === over.id) return
+            const oldIndex = effectiveColumnOrder.indexOf(String(active.id))
+            const newIndex = effectiveColumnOrder.indexOf(String(over.id))
+            if (oldIndex === -1 || newIndex === -1) return
+            const newOrder = arrayMove(effectiveColumnOrder, oldIndex, newIndex)
+            onColumnOrderChange?.(newOrder)
+        },
+        [effectiveColumnOrder, onColumnOrderChange]
+    )
+
+    const handleDragCancel = useCallback(() => {
+        setIsDraggingColumn(false)
+    }, [])
 
     return (
         <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             <style>{`
                 .ce-row:hover { background: var(--vscode-list-hoverBackground, rgba(255,255,255,0.04)); }
+                .ce-dragging .ce-row:hover { background: none; }
+                .ce-dragging { pointer-events: none; }
+                .ce-dragging .ce-drag-handle { pointer-events: auto; }
+                @keyframes ce-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+                .ce-spin { animation: ce-spin 1s linear infinite; }
+                .ce-resizer {
+                    position: absolute; right: 0; top: 0; bottom: 0; width: 4px;
+                    cursor: col-resize; user-select: none;
+                    border-right: 2px solid transparent;
+                    touch-action: none;
+                }
+                .ce-resizer:hover, .ce-resizer.ce-resizing {
+                    border-right-color: var(--vscode-focusBorder, #007acc);
+                }
+                .ce-drag-handle {
+                    display: flex; justify-content: center; cursor: grab;
+                    padding: 1px 0; opacity: 0.4;
+                }
+                .ce-drag-handle:hover { opacity: 0.8; }
+                .ce-drag-handle:active { cursor: grabbing; }
             `}</style>
-            {/* ── テーブル ── */}
-            <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-                <table style={tableStyle}>
-                    <thead>
-                        {table.getHeaderGroups().map((hg) => (
-                            <tr key={hg.id}>
-                                {hg.headers.map((header) => {
-                                    const ft = FILTER_MAP[header.column.id] as
-                                        | FilterType
-                                        | undefined
-                                    const isIndicator = header.column.id === 'cost_indicator'
-                                    return (
-                                        <th
-                                            key={header.id}
-                                            style={
-                                                isIndicator
-                                                    ? {
-                                                          ...thStyle,
-                                                          width: '28px',
-                                                          padding: '4px 2px',
-                                                          textAlign: 'center'
-                                                      }
-                                                    : thStyle
-                                            }
-                                        >
-                                            <div>
-                                                {header.isPlaceholder
-                                                    ? null
-                                                    : flexRender(
-                                                          header.column.columnDef.header,
-                                                          header.getContext()
-                                                      )}
-                                            </div>
-                                            {ft && ft !== 'none' && (
-                                                <div style={{ marginTop: '2px' }}>
-                                                    <ColumnFilter
-                                                        column={header.column}
-                                                        filterType={ft}
-                                                        lookupOptions={
-                                                            ft === 'lookup'
-                                                                ? getLookupOptions(header.column.id)
-                                                                : undefined
-                                                        }
-                                                    />
-                                                </div>
-                                            )}
-                                        </th>
-                                    )
-                                })}
-                            </tr>
-                        ))}
-                    </thead>
-                    <tbody>
-                        {table.getRowModel().rows.map((row) => (
-                            <tr key={row.id} className="ce-row">
-                                {row.getVisibleCells().map((cell) => {
-                                    const isIndicator = cell.column.id === 'cost_indicator'
-                                    return (
-                                        <td
-                                            key={cell.id}
-                                            style={
-                                                isIndicator
-                                                    ? {
-                                                          ...tdStyle,
-                                                          width: '28px',
-                                                          padding: '3px 2px',
-                                                          maxWidth: '28px'
-                                                      }
-                                                    : tdStyle
-                                            }
-                                        >
-                                            {flexRender(
-                                                cell.column.columnDef.cell,
-                                                cell.getContext()
-                                            )}
-                                        </td>
-                                    )
-                                })}
-                            </tr>
-                        ))}
-                        {table.getRowModel().rows.length === 0 && (
-                            <tr>
-                                <td
-                                    colSpan={columns.length}
-                                    style={{ ...tdStyle, textAlign: 'center', opacity: 0.6 }}
-                                >
-                                    データがありません
-                                </td>
-                            </tr>
-                        )}
-                    </tbody>
-                </table>
-            </div>
+            {/* ── テーブル（DnD コンテキスト） ── */}
+            <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                modifiers={[restrictToHorizontalAxis]}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                onDragCancel={handleDragCancel}
+            >
+                <div
+                    className={isDraggingColumn ? 'ce-dragging' : ''}
+                    style={{ flex: 1, minHeight: 0, overflow: 'auto' }}
+                >
+                    <table style={tableStyle}>
+                        <thead>
+                            {table.getHeaderGroups().map((hg) => (
+                                <tr key={hg.id}>
+                                    <SortableContext
+                                        items={effectiveColumnOrder}
+                                        strategy={horizontalListSortingStrategy}
+                                    >
+                                        {hg.headers.map((header) => {
+                                            const ft = FILTER_MAP[header.column.id] as
+                                                | FilterType
+                                                | undefined
+                                            const isIndicator =
+                                                header.column.id === 'cost_indicator'
+                                            return (
+                                                <DraggableHeader
+                                                    key={header.id}
+                                                    header={header}
+                                                    thStyle={thStyle}
+                                                    isIndicator={isIndicator}
+                                                    renderFilter={
+                                                        ft && ft !== 'none'
+                                                            ? () => (
+                                                                  <ColumnFilter
+                                                                      column={header.column}
+                                                                      filterType={ft}
+                                                                      lookupOptions={
+                                                                          ft === 'lookup'
+                                                                              ? getLookupOptions(
+                                                                                    header.column.id
+                                                                                )
+                                                                              : undefined
+                                                                      }
+                                                                  />
+                                                              )
+                                                            : undefined
+                                                    }
+                                                />
+                                            )
+                                        })}
+                                    </SortableContext>
+                                </tr>
+                            ))}
+                        </thead>
+                        <tbody>
+                            {table.getRowModel().rows.map((row) => (
+                                <tr key={row.id} className="ce-row">
+                                    <SortableContext
+                                        items={effectiveColumnOrder}
+                                        strategy={horizontalListSortingStrategy}
+                                    >
+                                        {row.getVisibleCells().map((cell) => (
+                                            <DragAlongCell
+                                                key={cell.id}
+                                                cell={cell}
+                                                tdStyle={tdStyle}
+                                                isIndicator={
+                                                    cell.column.id === 'cost_indicator'
+                                                }
+                                            />
+                                        ))}
+                                    </SortableContext>
+                                </tr>
+                            ))}
+                            {table.getRowModel().rows.length === 0 && (
+                                <tr>
+                                    <td
+                                        colSpan={columns.length}
+                                        style={{
+                                            ...tdStyle,
+                                            textAlign: 'center',
+                                            opacity: 0.6
+                                        }}
+                                    >
+                                        データがありません
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </DndContext>
 
             {/* ── 下部 Sticky Footer（ページング + 件数） ── */}
             <div style={footerStyle}>
@@ -731,10 +818,10 @@ export default function UsageTable({
                             background: 'transparent',
                             color: 'var(--vscode-foreground, #ccc)',
                             cursor: isLoading ? 'not-allowed' : 'pointer',
-                            opacity: isLoading ? 0.4 : 0.75
+                            opacity: 0.75
                         }}
                     >
-                        <VscRefresh size={13} />
+                        <VscRefresh size={13} className={isLoading ? 'ce-spin' : ''} />
                     </button>
                 </div>
             </div>
