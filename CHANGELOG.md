@@ -4,6 +4,12 @@ All notable changes to "Cursor Economizer" will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.10] - 2026-02-16
+
+### Fixed
+
+- パッケージサイズを最適化 — .vscodeignore 追加により不要ファイルを除外（52 MB → 6 MB）
+
 ## [0.1.9] - 2026-02-16
 
 ### Fixed

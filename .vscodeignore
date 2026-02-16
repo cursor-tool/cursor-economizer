@@ -1,0 +1,28 @@
+# Source files (not needed in VSIX)
+src/**
+webview/src/**
+webview/node_modules/**
+webview/package.json
+webview/tsconfig.json
+webview/vite.config.ts
+webview/index.html
+
+# Config files
+.gitignore
+tsconfig.json
+esbuild.mjs
+**/*.map
+
+# Development files
+.vscode/**
+dev-only-local/**
+**/.DS_Store
+res.json
+usage-summary.json
+
+# Site hosting (GitHub Pages)
+docs/**
+
+# Git
+.git/**
+.github/**
