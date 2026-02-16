@@ -49,24 +49,70 @@
   <script
     src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"
     integrity="sha512-pSeTnZAQF/RHxb0ysMoYQI/BRZsa5XuklcrgFfU3YZIdnD3LvkkqzrIeHxzFi6gKtI8Cpq2DEWdZjMTcNVhUYA=="
-    crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    crossorigin="anonymous" referrerpolicy="no-referrer"
+    onerror="document.getElementById('content').innerHTML='<p style=color:#f85149>marked.js CDN load failed (SRI or network)</p>'"></script>
   <script>
+    // #region agent log
+    var _dbg = [];
+    function _log(id, msg, data) {
+      var entry = {hypothesisId:id, message:msg, data:data, timestamp:Date.now()};
+      _dbg.push(entry);
+      console.log('[DBG]', id, msg, data);
+      fetch('http://127.0.0.1:7245/ingest/3954a88e-cb61-4090-9753-b388c783e470',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'docs/index.html',message:msg,data:data,timestamp:Date.now(),hypothesisId:id})}).catch(function(){});
+    }
+    // #endregion
+
+    // #region agent log — H1: marked.js ロード検証
+    _log('H1','marked global check',{
+      typeofMarked: typeof marked,
+      typeofMarkedParse: typeof marked !== 'undefined' ? typeof marked.parse : 'marked undefined'
+    });
+    // #endregion
+
     var REPO = 'cursor-tool/cursor-economizer';
     var BRANCH = 'main';
     var RAW = 'https://raw.githubusercontent.com/' + REPO + '/' + BRANCH;
+    var README_URL = RAW + '/README.md';
 
-    fetch(RAW + '/README.md')
-      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+    // #region agent log — H4: fetch URL 確認
+    _log('H4','fetch target',{url: README_URL});
+    // #endregion
+
+    fetch(README_URL)
+      .then(function (r) {
+        // #region agent log — H4: fetch レスポンス検証
+        _log('H4','fetch response',{status:r.status,ok:r.ok,type:r.type,url:r.url});
+        // #endregion
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.text();
+      })
       .then(function (md) {
+        // #region agent log — H3/H4: markdown 取得成功、parse 試行
+        _log('H3','md received',{length:md.length,first80:md.substring(0,80)});
+        _log('H3','marked.parse check before call',{typeofMarked:typeof marked,typeofParse:typeof marked !== 'undefined' ? typeof marked.parse : 'N/A'});
+        // #endregion
         var resolved = md.replace(
           /!\[([^\]]*)\]\((?!https?:\/\/)([^)]+)\)/g,
           function (_, alt, path) { return '![' + alt + '](' + RAW + '/' + path + ')'; }
         );
         document.getElementById('content').innerHTML = marked.parse(resolved);
+        // #region agent log
+        _log('OK','render success',{contentLength:document.getElementById('content').innerHTML.length});
+        // #endregion
       })
-      .catch(function () {
+      .catch(function (err) {
+        // #region agent log — 全仮説: エラー詳細キャプチャ
+        _log('ERR','catch triggered',{name:err.name,message:err.message,stack:err.stack});
+        // #endregion
         document.getElementById('content').innerHTML =
-          '<p style="text-align:center;color:#f85149;">README の読み込みに失敗しました。</p>';
+          '<div style="text-align:center;padding:40px 24px;">' +
+          '<p style="color:#f85149;font-size:18px;">README の読み込みに失敗しました。</p>' +
+          '<pre style="color:#8b949e;font-size:12px;text-align:left;max-width:600px;margin:20px auto;overflow:auto;background:#161b22;padding:16px;border-radius:6px;">' +
+          'Error: ' + err.message + '\n\n' +
+          'marked type: ' + typeof marked + '\n' +
+          'marked.parse type: ' + (typeof marked !== 'undefined' ? typeof marked.parse : 'marked undefined') + '\n\n' +
+          'Debug log:\n' + JSON.stringify(_dbg, null, 2) +
+          '</pre></div>';
       });
   </script>
 </body>
