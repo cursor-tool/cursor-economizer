@@ -32,8 +32,20 @@
       font-size: 13px;
       color: #8b949e;
     }
-    .site-footer a { color: #8b949e; text-decoration: none; }
+    .site-footer a {
+      color: #8b949e;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
     .site-footer a:hover { color: #58a6ff; }
+    .site-footer img {
+      width: 16px;
+      height: 16px;
+      opacity: 0.6;
+    }
+    .site-footer a:hover img { opacity: 0.9; }
     .loading { text-align: center; padding: 80px 24px; color: #8b949e; }
   </style>
 </head>
@@ -43,6 +55,7 @@
   </article>
   <footer class="site-footer">
     <a href="https://pacific-system.tokyo" target="_blank" rel="noopener">
+      <img src="icon.png" alt="" width="16" height="16">
       Pacific System
     </a>
   </footer>
