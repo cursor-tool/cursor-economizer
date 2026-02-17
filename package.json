@@ -2,7 +2,7 @@
   "name": "cursor-economizer",
   "displayName": "%extension.displayName%",
   "description": "%extension.description%",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "publisher": "pacific-system",
   "icon": "img/icon.png",
   "repository": {
@@ -45,6 +45,19 @@
         "command": "cursorEconomizer.exportCsv",
         "title": "%commands.exportCsv.title%",
         "category": "%commands.category%"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "cursorEconomizer.refreshData",
+        "key": "ctrl+r",
+        "mac": "cmd+r",
+        "when": "activeWebviewPanelId == 'cursorEconomizerDetail'"
+      },
+      {
+        "command": "cursorEconomizer.refreshData",
+        "key": "f5",
+        "when": "activeWebviewPanelId == 'cursorEconomizerDetail'"
       }
     ],
     "configuration": [

@@ -343,6 +343,23 @@ export default function App() {
         }
     }, [handleMessage])
 
+    // ── キーボードショートカット（Cmd+R / Ctrl+R / F5 → リロード） ──
+    useEffect(() => {
+        const handleKeydown = (e: KeyboardEvent) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'r') {
+                e.preventDefault()
+                postMessage({ type: 'requestRefresh' })
+                return
+            }
+            if (e.key === 'F5') {
+                e.preventDefault()
+                postMessage({ type: 'requestRefresh' })
+            }
+        }
+        window.addEventListener('keydown', handleKeydown)
+        return () => window.removeEventListener('keydown', handleKeydown)
+    }, [])
+
     // ── カラム並び順変更ハンドラ（DnD 完了時に呼ばれる） ──
     const handleColumnOrderChange = useCallback((newOrder: string[]) => {
         setColumnOrder(newOrder)
