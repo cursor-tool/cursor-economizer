@@ -190,11 +190,12 @@ function buildMeters(
                     cycleTotalCents += Number(e.total_cents) || 0
                 }
             }
+            cycleTotalCents = Math.floor(cycleTotalCents * 100) / 100
             const freeRatio = (cycleTotalCents / FREE_PLAN_LIMIT_CENTS) * 100
             meters.push({
                 id: 'free-quota',
                 title: 'Free Quota',
-                valueLabel: `${cycleTotalCents}¢`,
+                valueLabel: `${cycleTotalCents.toFixed(2)}¢`,
                 goalLabel: `/ ${FREE_PLAN_LIMIT_CENTS}¢`,
                 ratio: freeRatio,
                 zone: freeRatio >= 100 ? 'danger' : meterZone(freeRatio),
