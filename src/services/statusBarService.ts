@@ -169,18 +169,23 @@ class StatusBarService {
         const db = dbService.getDb()
         const myTeamId = this.getMyTeamId()
 
-        const sql =
-            myTeamId !== null
-                ? `SELECT kind, usage_based_costs,
+        const columns = `kind, usage_based_costs,
                 input_tokens, output_tokens, cache_write_tokens, cache_read_tokens,
-                requests_costs
-         FROM usage_events WHERE owning_team = ? ORDER BY timestamp DESC LIMIT 1`
-                : `SELECT kind, usage_based_costs,
-                input_tokens, output_tokens, cache_write_tokens, cache_read_tokens,
-                requests_costs
-         FROM usage_events ORDER BY timestamp DESC LIMIT 1`
+                requests_costs`
 
-        const result = myTeamId !== null ? db.exec(sql, [String(myTeamId)]) : db.exec(sql)
+        let result: ReturnType<typeof db.exec>
+        if (myTeamId !== null) {
+            result = db.exec(
+                `SELECT ${columns} FROM usage_events WHERE owning_team = ? ORDER BY timestamp DESC LIMIT 1`,
+                [String(myTeamId)]
+            )
+        } else {
+            result = db.exec(
+                `SELECT ${columns} FROM usage_events
+                 WHERE owning_user = CAST((SELECT id FROM auth_me LIMIT 1) AS TEXT)
+                 ORDER BY timestamp DESC LIMIT 1`
+            )
+        }
 
         if (result.length === 0 || result[0].values.length === 0) {
             return null
@@ -265,9 +270,8 @@ class StatusBarService {
      */
     private getTeamMemberDisplayLabel(): string {
         const db = dbService.getDb()
-        const result = db.exec(
-            `SELECT name, email FROM team_members WHERE id = user_id ORDER BY fetched_at DESC LIMIT 1`
-        )
+        // auth_me は DELETE → INSERT で常に現在のトークンのユーザーに更新される
+        const result = db.exec('SELECT name, email FROM auth_me LIMIT 1')
         if (result.length === 0 || result[0].values.length === 0) {
             return ''
         }

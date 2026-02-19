@@ -94,18 +94,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const message = err instanceof Error ? err.message : String(err)
                 console.error('Cursor Economizer: StatusBar 更新失敗 (tokenChanged):', message)
             })
-            // トークン変更時: 新しいトークンでデータを即座に再取得
-            // これにより limit_type / membership_type など新トークンの情報が正しく表示される
+            // トークン変更 = アカウント切替の可能性がある
+            // → 強制初回同期フラグをセットして、旧アカウントの差分取得パスに入らないようにする
             if (newToken) {
-                vscode.commands
-                    .executeCommand('cursorEconomizer.refreshData')
-                    .then(undefined, (err) => {
-                        const message = err instanceof Error ? err.message : String(err)
-                        console.error(
-                            'Cursor Economizer: refreshData 失敗 (tokenChanged):',
-                            message
-                        )
-                    })
+                forceInitialSync = true
+                console.log('Cursor Economizer: トークン変更検知 → 強制初回同期フラグ ON')
+
+                // inFlight の場合は完了後に自動取得タイマーが発火するのを待つ
+                // inFlight でなければ即座に refreshData を実行
+                const retryRefresh = () => {
+                    if (inFlight) {
+                        setTimeout(retryRefresh, 500)
+                        return
+                    }
+                    vscode.commands
+                        .executeCommand('cursorEconomizer.refreshData')
+                        .then(undefined, (err) => {
+                            const message = err instanceof Error ? err.message : String(err)
+                            console.error(
+                                'Cursor Economizer: refreshData 失敗 (tokenChanged):',
+                                message
+                            )
+                        })
+                }
+                retryRefresh()
             }
         })
     )
@@ -174,6 +186,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // --- refreshData 多重起動ガード（activate クロージャスコープ） ---
     let inFlight = false
+    // トークン変更時に true → refreshData で初回同期を強制（差分取得パスをスキップ）
+    let forceInitialSync = false
 
     // コマンド登録: データ取得（API-A 配線）
     context.subscriptions.push(
@@ -226,9 +240,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
                         // ────────────────────────────────────────────
                         // 初回同期 vs 差分取得の分岐
+                        // トークン変更時は forceInitialSync=true → 常に初回同期パスへ
                         // ────────────────────────────────────────────
-                        const latest = apiService.getLatestEventTimestamp()
+                        const latest = forceInitialSync
+                            ? null
+                            : apiService.getLatestEventTimestamp()
                         const isInitialSync = latest === null
+                        if (forceInitialSync) {
+                            forceInitialSync = false
+                            console.log(
+                                'Cursor Economizer: 強制初回同期 (トークン変更)'
+                            )
+                        }
 
                         if (isInitialSync) {
                             // ════════════════════════════════════════
@@ -261,6 +284,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             } else if (resultE.status === 'fulfilled') {
                                 console.log(
                                     'Cursor Economizer: チーム未所属のため API-D スキップ'
+                                )
+                                // 旧トークンの team_members が残留すると
+                                // ロール判定や表示フィルタに影響するためクリアする
+                                dbService.reload()
+                                const db = dbService.getDb()
+                                db.run('DELETE FROM team_members')
+                                dbService.persist()
+                                console.log(
+                                    'Cursor Economizer: team_members をクリアしました（チーム未所属）'
                                 )
                             }
 
@@ -500,6 +532,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             } else if (resultE.status === 'fulfilled') {
                                 console.log(
                                     'Cursor Economizer: チーム未所属のため API-D スキップ'
+                                )
+                                dbService.reload()
+                                const db = dbService.getDb()
+                                db.run('DELETE FROM team_members')
+                                dbService.persist()
+                                console.log(
+                                    'Cursor Economizer: team_members をクリアしました（チーム未所属）'
                                 )
                             }
 
@@ -762,7 +801,59 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
 
             const db = dbService.getDb()
-            const result = db.exec('SELECT * FROM usage_events ORDER BY timestamp DESC')
+
+            // ── アクセス制御: webviewService.sendDataToWebview と同一ロジック ──
+            // (1) チーム管理者 (OWNER): owning_team でフィルタ → チーム全員分
+            // (2) チームメンバー (MEMBER): owning_team + owning_user → 自身のみ
+            // (3) チーム未所属 (無料プラン等): owning_user → 自身のみ
+            const whereClauses: string[] = []
+            const whereParams: (string | number)[] = []
+
+            // auth_me から現在のユーザー ID を取得
+            let myUserId: number | null = null
+            const meResult = db.exec('SELECT id FROM auth_me LIMIT 1')
+            if (meResult.length > 0 && meResult[0].values.length > 0) {
+                const id = meResult[0].values[0][0]
+                myUserId = typeof id === 'number' ? id : null
+            }
+
+            // teams から自チーム ID を取得
+            let myTeamId: number | null = null
+            const teamsResult = db.exec('SELECT id FROM teams ORDER BY fetched_at DESC LIMIT 1')
+            if (teamsResult.length > 0 && teamsResult[0].values.length > 0) {
+                const id = teamsResult[0].values[0][0]
+                myTeamId = typeof id === 'number' ? id : null
+            }
+
+            // team_members から自身のロールを取得
+            let myRole: string | null = null
+            if (myUserId !== null && myTeamId !== null) {
+                const roleResult = db.exec(
+                    'SELECT role FROM team_members WHERE id = ?',
+                    [myUserId]
+                )
+                if (roleResult.length > 0 && roleResult[0].values.length > 0) {
+                    myRole = String(roleResult[0].values[0][0] ?? '')
+                }
+            }
+
+            if (myTeamId !== null) {
+                whereClauses.push('owning_team = ?')
+                whereParams.push(String(myTeamId))
+                if (myRole === 'TEAM_ROLE_MEMBER' && myUserId !== null) {
+                    whereClauses.push('owning_user = ?')
+                    whereParams.push(String(myUserId))
+                }
+            } else if (myUserId !== null) {
+                whereClauses.push('owning_user = ?')
+                whereParams.push(String(myUserId))
+            }
+
+            const whereClause = whereClauses.length > 0 ? ` WHERE ${whereClauses.join(' AND ')}` : ''
+            const result = db.exec(
+                `SELECT * FROM usage_events${whereClause} ORDER BY timestamp DESC`,
+                whereParams.length > 0 ? whereParams : undefined
+            )
 
             if (result.length === 0 || result[0].values.length === 0) {
                 vscode.window.showInformationMessage('エクスポートするデータがありません')

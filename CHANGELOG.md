@@ -4,6 +4,16 @@ All notable changes to "Cursor Economizer" will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.14] - 2026-02-19
+
+- Free Quota の算定方法を total_cents の課金期間合計（上限 200¢）に変更
+- 軽微なバグの修正
+
+---
+
+- Changed Free Quota calculation to billing-cycle total of total_cents (limit: 200¢)
+- Minor bug fixes
+
 ## [0.1.13] - 2026-02-19
 
 - 無料プランの Free Quota を $9 でモニタリングする機能を追加

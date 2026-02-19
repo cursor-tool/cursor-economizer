@@ -513,9 +513,16 @@ class ApiService {
         }
 
         const response = parsed as Record<string, unknown>
+        const keys = Object.keys(response)
 
         // デバッグ: レスポンスのキー一覧を出力
-        console.log(`Cursor Economizer: API-A response keys=${Object.keys(response).join(',')}`)
+        console.log(`Cursor Economizer: API-A response keys=${keys.join(',')}`)
+
+        // {} 空オブジェクト = 該当範囲にイベントなし（Cursor API の正常応答）
+        if (keys.length === 0) {
+            console.log('Cursor Economizer: API-A returned empty object → no events in range')
+            return { totalUsageEventsCount: 0, usageEventsDisplay: [] }
+        }
 
         if (typeof response.totalUsageEventsCount !== 'number') {
             console.error(
@@ -845,15 +852,21 @@ class ApiService {
     }
 
     /**
-     * usage_events テーブルの最新 timestamp を取得する。
-     * DB が空（レコード 0 件）の場合は null を返す（= 初回同期）。
-     * string が返る場合は差分取得に使用する ISO 8601 文字列。
+     * 現在のユーザーに属する usage_events の最新 timestamp を取得する。
+     * auth_me テーブルの id で owning_user をスコープし、
+     * 旧トークンのイベントに引きずられて差分取得範囲がずれるのを防ぐ。
+     *
+     * auth_me が空（API-C 未取得）または該当ユーザーのイベントが 0 件の場合は
+     * null を返す（= 初回同期）。
      *
      * reload() は呼ばない（initialize() 直後 or saveEventsToDb() 直後で最新のため）。
      */
     getLatestEventTimestamp(): string | null {
         const db = dbService.getDb()
-        const result = db.exec('SELECT MAX(timestamp) FROM usage_events')
+        const result = db.exec(
+            `SELECT MAX(timestamp) FROM usage_events
+             WHERE owning_user = CAST((SELECT id FROM auth_me LIMIT 1) AS TEXT)`
+        )
 
         // result が空（テーブルにレコードなし）の場合
         if (result.length === 0 || result[0].values.length === 0) {
