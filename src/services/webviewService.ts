@@ -268,7 +268,7 @@ class WebviewService {
      *
      * - userMap: auth_me + team_members から owning_user ID → 表示名のマッピングを構築。
      * - myRole: team_members で自身の role を判定（OWNER / MEMBER / null）。
-     * - ロールフィルタ: MEMBER の場合は自身の owning_user のみ表示。
+     * - ロールフィルタ: チーム所属時は OWNER=全員 / MEMBER=自身のみ。チーム未所属は常に自身のみ。
      * - usage_events: timestamp DESC で最大 10000 件取得。raw_json / id を除外。
      * - totalCount: usage_events の全件数（LIMIT 適用前）。
      * - summary: usage_summary の最新 1 件。raw_json / id を除外。レコードなしなら null。
@@ -295,12 +295,17 @@ class WebviewService {
         const whereParams: string[] = []
 
         if (myTeamId !== null) {
+            // チーム所属: チームのイベントに絞る
             whereClauses.push('owning_team = ?')
             whereParams.push(String(myTeamId))
-        }
-
-        // MEMBER ロールの場合は自身のデータのみ表示
-        if (myRole === 'TEAM_ROLE_MEMBER' && myUserId !== null) {
+            // MEMBER（非管理者）は自身のデータのみ表示。OWNER は全メンバー分を表示
+            if (myRole === 'TEAM_ROLE_MEMBER' && myUserId !== null) {
+                whereClauses.push('owning_user = ?')
+                whereParams.push(String(myUserId))
+            }
+        } else if (myUserId !== null) {
+            // チーム未所属（個人・無料プラン等）: 自身のデータのみ表示
+            // トークン切替後に旧ユーザーのイベントが DB に残っていても混入しない
             whereClauses.push('owning_user = ?')
             whereParams.push(String(myUserId))
         }

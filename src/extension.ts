@@ -89,11 +89,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     console.log('Cursor Economizer: StatusBarService initialized')
 
     context.subscriptions.push(
-        tokenService.onTokenChanged(() => {
+        tokenService.onTokenChanged((newToken) => {
             statusBarService.refresh().catch((err) => {
                 const message = err instanceof Error ? err.message : String(err)
                 console.error('Cursor Economizer: StatusBar 更新失敗 (tokenChanged):', message)
             })
+            // トークン変更時: 新しいトークンでデータを即座に再取得
+            // これにより limit_type / membership_type など新トークンの情報が正しく表示される
+            if (newToken) {
+                vscode.commands
+                    .executeCommand('cursorEconomizer.refreshData')
+                    .then(undefined, (err) => {
+                        const message = err instanceof Error ? err.message : String(err)
+                        console.error(
+                            'Cursor Economizer: refreshData 失敗 (tokenChanged):',
+                            message
+                        )
+                    })
+            }
         })
     )
 

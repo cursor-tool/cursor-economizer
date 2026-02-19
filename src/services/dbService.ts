@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS usage_events (
   cursor_token_fee REAL   NOT NULL DEFAULT 0,
   is_chargeable   INTEGER NOT NULL DEFAULT 0,
   is_headless     INTEGER NOT NULL DEFAULT 0,
+  custom_subscription_name TEXT    DEFAULT NULL,
   raw_json        TEXT    NOT NULL,
   fetched_at      TEXT    NOT NULL,
   note            TEXT    DEFAULT '',
@@ -189,6 +190,9 @@ class DbService {
         // ── マイグレーション: team_members に team_id カラム追加 ──
         this.migrateTeamMembersTeamId()
 
+        // ── マイグレーション: usage_events に custom_subscription_name カラム追加 ──
+        this.migrateCustomSubscriptionName()
+
         // ── マイグレーション: usage_based_costs TEXT → REAL ──
         // 既存データの "$0.08" や "-" を数値に変換する。
         // カラム型は SQLite では制約ではないため ALTER 不要。値の変換のみ行う。
@@ -217,6 +221,26 @@ class DbService {
         }
         console.log('Cursor Economizer: team_members に team_id カラムを追加')
         this.db.run(`ALTER TABLE team_members ADD COLUMN team_id INTEGER NOT NULL DEFAULT 0`)
+        this.persist()
+    }
+
+    /**
+     * usage_events テーブルに custom_subscription_name カラムが存在しなければ追加する。冪等。
+     */
+    private migrateCustomSubscriptionName(): void {
+        if (!this.db) {
+            return
+        }
+        const info = this.db.exec(`PRAGMA table_info(usage_events)`)
+        if (info.length === 0) {
+            return
+        }
+        const hasCol = info[0].values.some((row) => row[1] === 'custom_subscription_name')
+        if (hasCol) {
+            return
+        }
+        console.log('Cursor Economizer: usage_events に custom_subscription_name カラムを追加')
+        this.db.run(`ALTER TABLE usage_events ADD COLUMN custom_subscription_name TEXT DEFAULT NULL`)
         this.persist()
     }
 

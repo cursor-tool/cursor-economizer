@@ -232,6 +232,9 @@ function toApiUsageEvent(raw: unknown): ApiUsageEvent {
         timestamp: String(r.timestamp ?? ''),
         model: String(r.model ?? ''),
         kind: String(r.kind ?? ''),
+        customSubscriptionName: r.customSubscriptionName != null
+            ? String(r.customSubscriptionName)
+            : undefined,
         maxMode: r.maxMode != null ? Boolean(r.maxMode) : undefined,
         requestsCosts: r.requestsCosts != null ? Number(r.requestsCosts) : undefined,
         usageBasedCosts: parseUsageBasedCosts(r.usageBasedCosts),
@@ -714,13 +717,13 @@ class ApiService {
         // --- INSERT OR IGNORE: 新規行のみ挿入（既存行は無視） ---
         const insertSql = `
       INSERT OR IGNORE INTO usage_events (
-        timestamp, model, kind, max_mode, requests_costs,
+        timestamp, model, kind, custom_subscription_name, max_mode, requests_costs,
         usage_based_costs, is_token_based_call,
         input_tokens, output_tokens, cache_write_tokens, cache_read_tokens,
         total_cents, owning_user, owning_team, cursor_token_fee,
         is_chargeable, is_headless, raw_json, fetched_at
       ) VALUES (
-        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?,
         ?, ?,
         ?, ?, ?, ?,
         ?, ?, ?, ?,
@@ -732,6 +735,7 @@ class ApiService {
         const updateSql = `
       UPDATE usage_events SET
         kind              = ?,
+        custom_subscription_name = ?,
         max_mode          = ?,
         requests_costs    = ?,
         usage_based_costs = ?,
@@ -771,11 +775,14 @@ class ApiService {
                 const isChargeable = event.isChargeable ? 1 : 0
                 const isHeadless = event.isHeadless ? 1 : 0
 
+                const customSubscriptionName = event.customSubscriptionName ?? null
+
                 // Step 1: INSERT OR IGNORE（新規行のみ挿入）
                 db.run(insertSql, [
                     event.timestamp,
                     event.model,
                     event.kind,
+                    customSubscriptionName,
                     maxMode,
                     requestsCosts,
                     event.usageBasedCosts,
@@ -797,6 +804,7 @@ class ApiService {
                 // Step 2: UPDATE（既存行の note 以外を更新）
                 db.run(updateSql, [
                     event.kind,
+                    customSubscriptionName,
                     maxMode,
                     requestsCosts,
                     event.usageBasedCosts,
@@ -904,6 +912,16 @@ class ApiService {
         const fetchedAt = new Date().toISOString()
         const rawJson = JSON.stringify(summary)
 
+        // ディスクから最新 DB を再読込（他 Window の変更を取り込み）
+        dbService.reload()
+
+        // reload() 後に DB インスタンスを取得する
+        const db = dbService.getDb()
+
+        // 最新スナップショットのみ保持（DELETE → INSERT）
+        // 旧トークンのサマリが残ると limit_type / membership_type 等が誤表示されるため
+        db.run('DELETE FROM usage_summary')
+
         const insertSql = `
       INSERT INTO usage_summary (
         billing_cycle_start, billing_cycle_end,
@@ -927,12 +945,6 @@ class ApiService {
         ?, ?
       )
     `
-
-        // ディスクから最新 DB を再読込（他 Window の変更を取り込み）
-        dbService.reload()
-
-        // reload() 後に DB インスタンスを取得する
-        const db = dbService.getDb()
 
         db.run(insertSql, [
             summary.billingCycleStart,

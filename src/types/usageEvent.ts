@@ -3,6 +3,7 @@ export interface ApiUsageEvent {
   timestamp: string;
   model: string;
   kind: string;
+  customSubscriptionName?: string;
   maxMode?: boolean;
   requestsCosts?: number;
   usageBasedCosts: number;

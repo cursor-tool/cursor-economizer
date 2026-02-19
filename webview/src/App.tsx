@@ -163,17 +163,48 @@ function buildMeters(
         zone: meterZone(ecoRatio)
     })
 
-    // ── 2. 無料枠残数メーター（100% 上限・70%超で danger・スケーリングなし） ──
-    const planRatio = summary.plan_limit > 0 ? (summary.plan_used / summary.plan_limit) * 100 : 0
-    meters.push({
-        id: 'free-quota',
-        title: 'Free Quota',
-        valueLabel: `${summary.plan_used.toLocaleString()}`,
-        goalLabel: `/ ${summary.plan_limit.toLocaleString()}`,
-        ratio: planRatio,
-        zone: planRatio >= 70 ? 'danger' : meterZone(planRatio),
-        rawScale: true
-    })
+    // ── 2. 無料枠残数メーター ──
+    // plan_limit > 0: 通常（Pro/Enterprise）→ plan_used / plan_limit で比率表示
+    // plan_limit = 0: 無料プラン → billing cycle 内 CUSTOM_SUBSCRIPTION events の requestsCosts 合計を表示
+    if (summary.plan_limit > 0) {
+        const planRatio = (summary.plan_used / summary.plan_limit) * 100
+        meters.push({
+            id: 'free-quota',
+            title: 'Free Quota',
+            valueLabel: `${summary.plan_used.toLocaleString()}`,
+            goalLabel: `/ ${summary.plan_limit.toLocaleString()}`,
+            ratio: planRatio,
+            zone: planRatio >= 70 ? 'danger' : meterZone(planRatio),
+            rawScale: true
+        })
+    } else {
+        // 無料プラン: 最新の CUSTOM_SUBSCRIPTION イベントの requestsCosts を表示
+        const FREE_PLAN_LIMIT = 9
+        let latestReqCost = 0
+        let latestTs = 0
+        for (const e of events) {
+            const ts = Number(e.timestamp)
+            if (
+                ts >= cycleStartMs &&
+                ts <= cycleEndMs &&
+                e.kind === 'USAGE_EVENT_KIND_CUSTOM_SUBSCRIPTION' &&
+                ts > latestTs
+            ) {
+                latestTs = ts
+                latestReqCost = Number(e.requests_costs) || 0
+            }
+        }
+        const freeRatio = (latestReqCost / FREE_PLAN_LIMIT) * 100
+        meters.push({
+            id: 'free-quota',
+            title: 'Free Quota',
+            valueLabel: `$${latestReqCost.toFixed(1)}`,
+            goalLabel: `/ $${FREE_PLAN_LIMIT}`,
+            ratio: freeRatio,
+            zone: freeRatio >= 100 ? 'danger' : meterZone(freeRatio),
+            rawScale: true
+        })
+    }
 
     // ── 3. 本日の利用額メーター ──
     if (dailyUsageGoal > 0) {

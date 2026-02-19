@@ -14,6 +14,7 @@ export interface WebviewUsageEventRow {
     timestamp: string
     model: string
     kind: string
+    custom_subscription_name: string | null
     max_mode: number | null
     requests_costs: number | null
     usage_based_costs: number

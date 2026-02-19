@@ -4,6 +4,16 @@ All notable changes to "Cursor Economizer" will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.13] - 2026-02-19
+
+- 無料プランの Free Quota を $9 でモニタリングする機能を追加
+- トークン変更時にデータを自動再取得するよう改善
+
+---
+
+- Added Free Quota monitoring for the Free plan with a $9 limit
+- Improved automatic data refresh when the token is changed
+
 ## [0.1.12] - 2026-02-19
 
 - 無料プランでトークンを設定してもデータが表示されないバグを修正

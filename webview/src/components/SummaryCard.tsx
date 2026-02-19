@@ -46,7 +46,7 @@ export default function SummaryCard({ summary, userName, maxCost, meters }: Summ
   const onDemandDollar = (summary.ondemand_used / 100).toFixed(2);
   const onDemandLimitText = summary.ondemand_limit != null
     ? ` / $${(summary.ondemand_limit / 100).toFixed(0)}`
-    : ' (上限なし)';
+    : ` (${summary.membership_type})`;
 
   // 最大COST（usage_based_costs: 既にドル単位）
   const maxCostDollar = (Number(maxCost) || 0).toFixed(2);
@@ -121,16 +121,14 @@ export default function SummaryCard({ summary, userName, maxCost, meters }: Summ
           </div>
         </div>
 
-        {/* OnDemand 累積額 */}
-        {summary.ondemand_enabled !== 0 && (
-          <div style={infoItemStyle}>
-            <div style={infoLabelStyle}>OnDemand</div>
-            <div style={infoValueStyle}>
-              ${onDemandDollar}
-              <span style={annotationStyle}>{onDemandLimitText}</span>
-            </div>
+        {/* OnDemand 累積額（常時表示。無効時は $0.00 + plan 種別） */}
+        <div style={infoItemStyle}>
+          <div style={infoLabelStyle}>OnDemand</div>
+          <div style={infoValueStyle}>
+            ${onDemandDollar}
+            <span style={annotationStyle}>{onDemandLimitText}</span>
           </div>
-        )}
+        </div>
 
         {/* 課金期間中の最大COST */}
         <div style={infoItemStyle}>
