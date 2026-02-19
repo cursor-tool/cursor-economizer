@@ -233,9 +233,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                                 ])
 
                             // API-D: API-E の結果から teamId を取得して実行
+                            // チーム未所属（無料プラン等）の場合は正常スキップ（null）
                             let resultD: PromiseSettledResult<
                                 Awaited<ReturnType<typeof apiService.fetchTeam>>
-                            >
+                            > | null = null
                             if (
                                 resultE.status === 'fulfilled' &&
                                 resultE.value.teams.length > 0
@@ -244,22 +245,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                                 resultD = await Promise.allSettled([
                                     apiService.fetchTeam(token, teamId)
                                 ]).then((r) => r[0])
-                            } else {
-                                resultD = {
-                                    status: 'rejected',
-                                    reason: new Error(
-                                        'teams 取得失敗のため team メンバー取得をスキップ'
-                                    )
-                                }
+                            } else if (resultE.status === 'fulfilled') {
+                                console.log(
+                                    'Cursor Economizer: チーム未所属のため API-D スキップ'
+                                )
                             }
 
                             // API-C/D/E のフェッチエラーはログ + 通知
+                            // null（正常スキップ）は除外する
                             const cdeErrors: string[] = []
-                            for (const [label, result] of [
+                            const cdeEntries: [string, PromiseSettledResult<unknown> | null][] = [
                                 ['API-C (auth/me)', resultC],
                                 ['API-D (dashboard/team)', resultD],
                                 ['API-E (dashboard/teams)', resultE]
-                            ] as const) {
+                            ]
+                            for (const [label, result] of cdeEntries) {
+                                if (result === null) {
+                                    continue
+                                }
                                 if (result.status === 'rejected') {
                                     const msg =
                                         result.reason instanceof Error
@@ -298,7 +301,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             if (resultC.status === 'fulfilled') {
                                 apiService.saveAuthMeToDb(resultC.value)
                             }
-                            if (resultD.status === 'fulfilled') {
+                            if (resultD !== null && resultD.status === 'fulfilled') {
                                 const teamIdForSave =
                                     resultE.status === 'fulfilled' &&
                                     resultE.value.teams.length > 0
@@ -469,9 +472,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                                 ])
 
                             // API-D: API-E の結果から teamId を取得して実行
+                            // チーム未所属（無料プラン等）の場合は正常スキップ（null）
                             let resultD: PromiseSettledResult<
                                 Awaited<ReturnType<typeof apiService.fetchTeam>>
-                            >
+                            > | null = null
                             if (
                                 resultE.status === 'fulfilled' &&
                                 resultE.value.teams.length > 0
@@ -480,22 +484,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                                 resultD = await Promise.allSettled([
                                     apiService.fetchTeam(token, teamId)
                                 ]).then((r) => r[0])
-                            } else {
-                                resultD = {
-                                    status: 'rejected',
-                                    reason: new Error(
-                                        'teams 取得失敗のため team メンバー取得をスキップ'
-                                    )
-                                }
+                            } else if (resultE.status === 'fulfilled') {
+                                console.log(
+                                    'Cursor Economizer: チーム未所属のため API-D スキップ'
+                                )
                             }
 
                             // API-C/D/E のフェッチエラーはログ + 通知
+                            // null（正常スキップ）は除外する
                             const cdeErrors: string[] = []
-                            for (const [label, result] of [
+                            const cdeEntries: [string, PromiseSettledResult<unknown> | null][] = [
                                 ['API-C (auth/me)', resultC],
                                 ['API-D (dashboard/team)', resultD],
                                 ['API-E (dashboard/teams)', resultE]
-                            ] as const) {
+                            ]
+                            for (const [label, result] of cdeEntries) {
+                                if (result === null) {
+                                    continue
+                                }
                                 if (result.status === 'rejected') {
                                     const msg =
                                         result.reason instanceof Error
@@ -526,7 +532,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             if (resultC.status === 'fulfilled') {
                                 apiService.saveAuthMeToDb(resultC.value)
                             }
-                            if (resultD.status === 'fulfilled') {
+                            if (resultD !== null && resultD.status === 'fulfilled') {
                                 const teamIdForSave =
                                     resultE.status === 'fulfilled' &&
                                     resultE.value.teams.length > 0

@@ -300,16 +300,15 @@ function toApiUsageSummary(raw: unknown): ApiUsageSummary {
     }
     const onDemand = indiv.onDemand as Record<string, unknown>
 
-    // teamUsage 構造検証
-    if (!r.teamUsage || typeof r.teamUsage !== 'object') {
-        throw new ApiParseError('teamUsage が存在しないかオブジェクトではありません')
-    }
-    const team = r.teamUsage as Record<string, unknown>
-
-    if (!team.onDemand || typeof team.onDemand !== 'object') {
-        throw new ApiParseError('teamUsage.onDemand が存在しないかオブジェクトではありません')
-    }
-    const teamOnDemand = team.onDemand as Record<string, unknown>
+    // teamUsage 構造検証（無料プランでは teamUsage: {} が返るためオプショナル扱い）
+    const team =
+        r.teamUsage && typeof r.teamUsage === 'object'
+            ? (r.teamUsage as Record<string, unknown>)
+            : {}
+    const teamOnDemand =
+        team.onDemand && typeof team.onDemand === 'object'
+            ? (team.onDemand as Record<string, unknown>)
+            : {}
 
     return {
         billingCycleStart: r.billingCycleStart,
