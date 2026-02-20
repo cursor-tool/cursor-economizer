@@ -4,6 +4,14 @@ All notable changes to "Cursor Economizer" will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.18] - 2026-02-20
+
+- 軽微なバグの修正
+
+---
+
+- Minor bug fixes
+
 ## [0.1.17] - 2026-02-20
 
 - メモ機能を強化（README にメモ機能ガイドを追加、保存操作の説明を実装仕様に合わせて更新）

@@ -1,13 +1,14 @@
 /**
- * メモ編集モーダル。
+ * メモ編集モーダル（hidden 方式）。
  *
- * - row が非 null のとき表示（オーバーレイ + センター配置）
+ * - DOM は常にマウント済み。row の有無で display: flex / none を切り替え。
+ *   mount/unmount コストなし・blur 発火タイミングの不確実性を排除。
  * - row メタデータ（DATE / MODEL / COST / KIND）を上部に表示
  * - <textarea> で改行対応
- * - 保存と閉じるを分離:
+ * - 全 close パスで「保存してから閉じる」パターンを統一:
  *   - onBlur → onSave(draft)（保存のみ。モーダルは閉じない）
- *   - outside mousedown → onClose()（閉じるのみ。blur が先に発火して保存済み）
- *   - ESC keydown → onSave(draft) + onClose()（先に保存してから閉じる）
+ *   - outside mousedown → onSave(draft) + onClose()（保存してから閉じる）
+ *   - ESC keydown → onSave(draft) + onClose()（保存してから閉じる）
  * - IME 対応: composingRef で ESC の誤発火を防止
  * - カスタムリサイズハンドル: CSS resize のズームオフセット問題を回避するため
  *   JS でドラッグリサイズを実装。clientY ベースで 1:1 追従。
@@ -36,17 +37,30 @@ export default function MemoModal({ row, onSave, onClose }: MemoModalProps) {
     const [textareaHeight, setTextareaHeight] = useState(120)
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const composingRef = useRef(false)
+    const [prevRow, setPrevRow] = useState<WebviewUsageEventRow | null>(null)
 
-    useEffect(() => {
+    // row 変更時の同期リセット（React render-phase パターン）
+    // useEffect では display:flex 適用後〜state 反映前に 1 フレームの遅延が発生し
+    // 前回モーダルの draft が一瞬表示されるため、render 内で同期的にリセットする。
+    // ref: https://react.dev/reference/react/useState#storing-information-from-previous-renders
+    if (row !== prevRow) {
+        setPrevRow(row)
         if (row) {
-            const note = row.note ?? ''
-            setDraft(note)
+            setDraft(row.note ?? '')
             setTextareaHeight(120)
-            if (textareaRef.current) {
-                const el = textareaRef.current
-                el.focus()
-                el.setSelectionRange(note.length, note.length)
-            }
+        } else {
+            setDraft('')
+            setTextareaHeight(120)
+        }
+    }
+
+    // DOM 操作（focus / cursor 配置 / IME リセット）は commit 後に実行
+    useEffect(() => {
+        if (row && textareaRef.current) {
+            composingRef.current = false
+            const el = textareaRef.current
+            el.focus()
+            el.setSelectionRange((row.note ?? '').length, (row.note ?? '').length)
         }
     }, [row])
 
@@ -66,13 +80,15 @@ export default function MemoModal({ row, onSave, onClose }: MemoModalProps) {
     )
 
     // outside クリック: onMouseDown + target 判定でドラッグとの誤発火を防止
+    // ESC と同じ「保存してから閉じる」パターンで統一
     const handleOverlayMouseDown = useCallback(
         (e: React.MouseEvent<HTMLDivElement>) => {
             if (e.target === e.currentTarget) {
+                onSave(draft)
                 onClose()
             }
         },
-        [onClose]
+        [draft, onSave, onClose]
     )
 
     // ── カスタムリサイズハンドル ──
@@ -104,30 +120,37 @@ export default function MemoModal({ row, onSave, onClose }: MemoModalProps) {
         [textareaHeight]
     )
 
-    if (!row) return null
+    // hidden 方式: row=null でも DOM を維持し display で切り替え
+    const isVisible = row !== null
 
-    const kind = row.kind ? row.kind.replace(/^USAGE_EVENT_KIND_/, '') : ''
-    const costEmoji = getCostEmoji(row)
-    const cost = `$${(Number(row.usage_based_costs) || 0).toFixed(2)}`
-
-    const metaItems = [
-        `🕐 ${fmtTimestamp(row.timestamp)}`,
-        `🧠 ${row.model}`,
-        `${costEmoji} ${cost}`,
-        ...(kind ? [`ℹ️ ${kind}`] : [])
-    ]
+    const kind = row?.kind ? row.kind.replace(/^USAGE_EVENT_KIND_/, '') : ''
+    const costEmoji = row ? getCostEmoji(row) : ''
+    const cost = row ? `$${(Number(row.usage_based_costs) || 0).toFixed(2)}` : ''
+    const metaItems = row
+        ? [
+              `🕐 ${fmtTimestamp(row.timestamp)}`,
+              `🧠 ${row.model}`,
+              `${costEmoji} ${cost}`,
+              ...(kind ? [`ℹ️ ${kind}`] : [])
+          ]
+        : []
 
     return (
-        <div onMouseDown={handleOverlayMouseDown} style={overlayStyle}>
+        <div
+            onMouseDown={handleOverlayMouseDown}
+            style={{ ...overlayStyle, display: isVisible ? 'flex' : 'none' }}
+        >
             <div style={modalStyle}>
-                <div style={metaStyle}>
-                    {metaItems.map((item, i) => (
-                        <span key={i} style={metaItemStyle}>
-                            {i > 0 && <span style={metaSepStyle}>｜</span>}
-                            {item}
-                        </span>
-                    ))}
-                </div>
+                {metaItems.length > 0 && (
+                    <div style={metaStyle}>
+                        {metaItems.map((item, i) => (
+                            <span key={i} style={metaItemStyle}>
+                                {i > 0 && <span style={metaSepStyle}>｜</span>}
+                                {item}
+                            </span>
+                        ))}
+                    </div>
+                )}
                 <textarea
                     ref={textareaRef}
                     value={draft}
