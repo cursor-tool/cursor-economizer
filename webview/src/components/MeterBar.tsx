@@ -20,7 +20,7 @@ export type MeterZone = 'normal' | 'warn' | 'danger';
 export interface MeterViewModel {
   /** 一意識別子 */
   id: string;
-  /** メーター名（例: "Eco", "Free Quota"） */
+  /** メーター名（例: "Eco", "Plan Quota"） */
   title: string;
   /** 現在値の表示テキスト（例: "$9.80"） */
   valueLabel: string;
@@ -83,7 +83,7 @@ interface MeterBarProps {
 }
 
 export default function MeterBar({ meter }: MeterBarProps) {
-  // rawScale: ratio をそのまま弧位置に使う（Free Quota 等、100% が上限のメーター用）
+  // rawScale: ratio をそのまま弧位置に使う（Plan Quota 等、100% が上限のメーター用）
   // 通常: ratio 100% → 弧の 70% 地点にスケーリング。超過分は弧 100% でクランプ。
   const displayRatio = meter.rawScale
     ? Math.min(Math.max(meter.ratio, 0), 100)

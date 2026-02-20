@@ -4,6 +4,16 @@ All notable changes to "Cursor Economizer" will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.16] - 2026-02-20
+
+- Pro プランの plan_limit に対応したプラン枠メーター（Plan Quota）を追加
+- スリープ復帰後にデータ表示が更新されないバグを修正
+
+---
+
+- Added Plan Quota meter for Pro plan's plan_limit support
+- Fixed display not updating after waking from sleep
+
 ## [0.1.15] - 2026-02-20
 
 - 軽微なバグの修正

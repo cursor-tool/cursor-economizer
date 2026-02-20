@@ -816,9 +816,9 @@ export default function UsageTable({
                             border: 'none',
                             borderRadius: '2px',
                             background: 'transparent',
-                            color: 'var(--vscode-foreground, #ccc)',
+                            color: isLoading ? '#fff' : 'var(--vscode-foreground, #ccc)',
                             cursor: isLoading ? 'not-allowed' : 'pointer',
-                            opacity: 0.75
+                            opacity: 1
                         }}
                     >
                         <VscRefresh size={13} className={isLoading ? 'ce-spin' : ''} />

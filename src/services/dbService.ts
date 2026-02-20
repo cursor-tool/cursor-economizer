@@ -307,7 +307,8 @@ class DbService {
 
     /**
      * ディスクから DB を再読込（他 Window の変更を取り込む）。
-     * DB ファイルが存在しない場合は throw する。
+     * アトミック: 新 DB インスタンスの作成に成功してから旧インスタンスを閉じる。
+     * 途中で失敗しても旧 DB は閉じない（壊れた状態を防ぐ）。
      */
     reload(): void {
         if (!this.SQL) {
@@ -318,23 +319,33 @@ class DbService {
             throw new Error(`DB ファイルが見つかりません: ${this.dbPath}`)
         }
 
-        // 既存 DB を閉じる
-        if (this.db) {
-            this.db.close()
-        }
-
         const buffer = fs.readFileSync(this.dbPath)
-        this.db = new this.SQL.Database(buffer)
+        const newDb = new this.SQL.Database(buffer)
+
+        const oldDb = this.db
+        this.db = newDb
+
+        if (oldDb) {
+            try { oldDb.close() } catch { /* 旧インスタンスの close 失敗は無視 */ }
+        }
     }
 
     /**
      * 現在のメモリ上 DB インスタンスを返す。
-     * 後続 Phase で他 Service が SQL 実行に使用する。
+     * DB が閉じられている場合は自動的に reload() で復旧を試みる。
      */
     getDb(): Database {
         if (!this.db) {
             throw new Error('DB が初期化されていません')
         }
+
+        try {
+            this.db.exec('SELECT 1')
+        } catch {
+            console.warn('Cursor Economizer: DB connection lost — reloading from disk')
+            this.reload()
+        }
+
         return this.db
     }
 

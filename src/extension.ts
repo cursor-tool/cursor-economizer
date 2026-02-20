@@ -200,9 +200,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return
             }
 
-            // 同一ウィンドウ内の多重起動を抑止
+            // 同一ウィンドウ内の多重起動を抑止（withProgress が表示中のためサイレント）
             if (inFlight) {
-                vscode.window.showInformationMessage('データ取得中です')
                 return
             }
 
@@ -213,7 +212,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (!fetchLockService.acquireLock()) {
                 inFlight = false
                 webviewService.postToWebview({ type: 'loading', isLoading: false })
-                vscode.window.showInformationMessage('他のウィンドウで取得中です')
                 return
             }
 

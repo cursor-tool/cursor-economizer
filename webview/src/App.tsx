@@ -111,7 +111,7 @@ function ecoEmoji(avgDollars: number): string {
 
 // ── プラン種別判定（membership_type + limit_type + plan_limit の3項目評価） ──
 
-type PlanType = 'free' | 'pro' | 'enterprise' | 'unknown'
+type PlanType = 'free' | 'pro' | 'team' | 'unknown'
 
 function detectPlanType(summary: WebviewUsageSummaryRow): PlanType {
     const m = summary.membership_type?.toLowerCase() ?? ''
@@ -119,7 +119,7 @@ function detectPlanType(summary: WebviewUsageSummaryRow): PlanType {
     const limit = summary.plan_limit
 
     if (m === 'free' && l === 'user' && limit === 0) return 'free'
-    if (m === 'enterprise' && l === 'team' && limit > 0) return 'enterprise'
+    if (m === 'enterprise' && l === 'team' && limit > 0) return 'team'
     if (m !== 'free' && limit > 0) return 'pro'
     return 'unknown'
 }
@@ -178,7 +178,7 @@ function buildMeters(
         zone: meterZone(ecoRatio)
     })
 
-    // ── 2. 無料枠 / プラン利用メーター（プラン種別で分岐） ──
+    // ── 2. プラン枠メーター（プラン種別で分岐） ──
     const planType = detectPlanType(summary)
     switch (planType) {
         case 'free': {
@@ -204,11 +204,11 @@ function buildMeters(
             break
         }
         case 'pro':
-        case 'enterprise': {
+        case 'team': {
             const planRatio = (summary.plan_used / summary.plan_limit) * 100
             meters.push({
-                id: 'free-quota',
-                title: 'Free Quota',
+                id: 'plan-quota',
+                title: 'Plan Quota',
                 valueLabel: `${summary.plan_used.toLocaleString()}`,
                 goalLabel: `/ ${summary.plan_limit.toLocaleString()}`,
                 ratio: planRatio,
@@ -221,8 +221,8 @@ function buildMeters(
             if (summary.plan_limit > 0) {
                 const planRatio = (summary.plan_used / summary.plan_limit) * 100
                 meters.push({
-                    id: 'free-quota',
-                    title: 'Free Quota',
+                    id: 'plan-quota',
+                    title: 'Plan Quota',
                     valueLabel: `${summary.plan_used.toLocaleString()}`,
                     goalLabel: `/ ${summary.plan_limit.toLocaleString()}`,
                     ratio: planRatio,
