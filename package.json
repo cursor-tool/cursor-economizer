@@ -2,7 +2,7 @@
   "name": "cursor-economizer",
   "displayName": "%extension.displayName%",
   "description": "%extension.description%",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "publisher": "pacific-system",
   "icon": "img/icon.png",
   "repository": {

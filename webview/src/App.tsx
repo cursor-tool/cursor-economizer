@@ -11,6 +11,7 @@ import type {
 import type { MeterViewModel, MeterZone } from './components/MeterBar'
 import UsageTable from './components/UsageTable'
 import SummaryCard from './components/SummaryCard'
+import MemoModal from './components/MemoModal'
 
 // ── ブラウザ単体テスト用ダミーデータ（Vite dev server 時のみ使用） ──
 const IS_BROWSER = !getVsCodeApi()
@@ -329,6 +330,9 @@ export default function App() {
     /** カラム並び順（クロスウィンドウ共通・DB 永続化）。空配列はデフォルト順を使用 */
     const [columnOrder, setColumnOrder] = useState<string[]>([])
 
+    /** メモ編集モーダルの対象行。null = モーダル非表示 */
+    const [editingMemo, setEditingMemo] = useState<WebviewUsageEventRow | null>(null)
+
     // ── Extension Host → Webview メッセージ受信 ──────────────
     const handleMessage = useCallback((event: MessageEvent<HostToWebviewMessage>) => {
         const msg = event.data
@@ -425,6 +429,30 @@ export default function App() {
         postMessage({ type: 'saveColumnOrder', columnOrder: newOrder })
     }, [])
 
+    // ── メモモーダルハンドラ ──────────────────────────────
+    const handleOpenMemo = useCallback((row: WebviewUsageEventRow) => {
+        setEditingMemo(row)
+    }, [])
+
+    const handleSaveMemo = useCallback(
+        (note: string) => {
+            if (!editingMemo) return
+            if (note === editingMemo.note) return
+            postMessage({
+                type: 'updateMemo',
+                timestamp: editingMemo.timestamp,
+                model: editingMemo.model,
+                owningUser: editingMemo.owning_user,
+                note
+            })
+        },
+        [editingMemo]
+    )
+
+    const handleCloseMemo = useCallback(() => {
+        setEditingMemo(null)
+    }, [])
+
     // ── 初回マウント時にデータ要求 ──────────────────────────
     useEffect(() => {
         postMessage({ type: 'requestData' })
@@ -492,9 +520,16 @@ export default function App() {
                         isLoading={isLoading}
                         columnOrder={columnOrder.length > 0 ? columnOrder : undefined}
                         onColumnOrderChange={handleColumnOrderChange}
+                        onOpenMemo={handleOpenMemo}
                     />
                 </>
             )}
+
+            <MemoModal
+                row={editingMemo}
+                onSave={handleSaveMemo}
+                onClose={handleCloseMemo}
+            />
         </div>
     )
 }

@@ -26,6 +26,7 @@ import DraggableHeader from './DraggableHeader'
 import DragAlongCell from './DragAlongCell'
 import { postMessage } from '../hooks/useVsCodeApi'
 import { VscRefresh } from 'react-icons/vsc'
+import { getCostEmoji } from '../utils/costEmoji'
 
 // ── カスタムフィルタ関数: 数値範囲 ─────────────────────
 
@@ -53,37 +54,6 @@ function makeDisplayFilter<T>(formatter: (v: T) => string): FilterFn<WebviewUsag
     }
 }
 
-// ── コスト絵文字判定 ─────────────────────────────────
-// 参考: https://github.com/Ittipong/cursor-price-tracking
-
-/**
- * usage_based_costs（ドル値）と kind から課金レベル絵文字を返す。
- * - $0 超 & < $0.20 → ✅ Low
- * - $0.20 〜 $0.50  → ⚠️ Medium
- * - $0.50 〜 $1.00  → 🚨 High
- * - $1.00 超        → 🔥 Very High
- * - $3.00 超        → ☠️ Extreme
- * - $10.00 超       → 🥶 Freeze
- * - kind に INCLUDED         → 💎 Included
- * - kind に ERRORED_NOT_CHARGED → ❌ Error
- * - $0.00           → 🆓 Free
- * - その他          → ❓ Unknown
- */
-function getCostEmoji(row: WebviewUsageEventRow): string {
-    const dollars = Number(row.usage_based_costs) || 0
-    if (typeof dollars === 'number' && dollars > 0) {
-        if (dollars < 0.2) return '✅'
-        if (dollars <= 0.5) return '⚠️'
-        if (dollars > 10) return '🥶'
-        if (dollars > 3) return '☠️'
-        if (dollars > 1) return '🔥'
-        return '🚨'
-    }
-    if (row.kind.includes('INCLUDED')) return '💎'
-    if (row.kind.includes('ERRORED_NOT_CHARGED')) return '❌'
-    if (typeof dollars === 'number' && dollars === 0) return '🆓'
-    return '❓'
-}
 
 // ── フォーマッタ ──────────────────────────────────────
 
@@ -245,8 +215,8 @@ function resolveUserName(userId: string, userMap: Record<string, string>): strin
     return userMap[userId] ?? userId
 }
 
-/** userMap を受け取ってカラム定義配列を生成する */
-function buildColumns(userMap: Record<string, string>) {
+/** userMap と onOpenMemo を受け取ってカラム定義配列を生成する */
+function buildColumns(userMap: Record<string, string>, onOpenMemo: (row: WebviewUsageEventRow) => void) {
     return [
         col.display({
             id: 'cost_indicator',
@@ -355,9 +325,7 @@ function buildColumns(userMap: Record<string, string>) {
             cell: (info) => (
                 <MemoCell
                     value={info.getValue()}
-                    timestamp={info.row.original.timestamp}
-                    model={info.row.original.model}
-                    owningUser={info.row.original.owning_user}
+                    onEdit={() => onOpenMemo(info.row.original)}
                 />
             )
         })
@@ -454,7 +422,8 @@ export default function UsageTable({
     autoRefreshIntervalMinutes = 3,
     isLoading = false,
     columnOrder: columnOrderProp,
-    onColumnOrderChange
+    onColumnOrderChange,
+    onOpenMemo
 }: {
     data: WebviewUsageEventRow[]
     /** owning_user ID → 表示名のマッピング */
@@ -473,9 +442,11 @@ export default function UsageTable({
     columnOrder?: string[]
     /** カラム並び順変更時のコールバック */
     onColumnOrderChange?: (newOrder: string[]) => void
+    /** メモ編集モーダルを開くコールバック */
+    onOpenMemo: (row: WebviewUsageEventRow) => void
 }) {
     // ── userMap に依存するカラム定義を useMemo で生成 ──────────
-    const columns = useMemo(() => buildColumns(userMap), [userMap])
+    const columns = useMemo(() => buildColumns(userMap, onOpenMemo), [userMap, onOpenMemo])
 
     // ── データから動的 lookup 選択肢を生成 ──────────────────
     const dynamicLookupOptions = useMemo(() => {
