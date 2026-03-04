@@ -210,8 +210,8 @@ function buildMeters(
             meters.push({
                 id: 'plan-quota',
                 title: 'Plan Quota',
-                valueLabel: `${summary.plan_used.toLocaleString()}`,
-                goalLabel: `/ ${summary.plan_limit.toLocaleString()}`,
+                valueLabel: `$${(summary.plan_used / 100).toFixed(2)}`,
+                goalLabel: `/ $${(summary.plan_limit / 100).toFixed(2)}`,
                 ratio: planRatio,
                 zone: planRatio >= 70 ? 'danger' : meterZone(planRatio),
                 rawScale: true
@@ -224,8 +224,8 @@ function buildMeters(
                 meters.push({
                     id: 'plan-quota',
                     title: 'Plan Quota',
-                    valueLabel: `${summary.plan_used.toLocaleString()}`,
-                    goalLabel: `/ ${summary.plan_limit.toLocaleString()}`,
+                    valueLabel: `$${(summary.plan_used / 100).toFixed(2)}`,
+                    goalLabel: `/ $${(summary.plan_limit / 100).toFixed(2)}`,
                     ratio: planRatio,
                     zone: planRatio >= 70 ? 'danger' : meterZone(planRatio),
                     rawScale: true
@@ -233,6 +233,21 @@ function buildMeters(
             }
             break
         }
+    }
+
+    // ── 2b. Plan Bonus メーター（plan_bonus > 0 の場合のみ。プラン種別不問） ──
+    if (summary.plan_bonus > 0) {
+        const bonusUsed = summary.plan_total - summary.plan_included
+        const bonusRatio = (bonusUsed / summary.plan_bonus) * 100
+        meters.push({
+            id: 'plan-bonus',
+            title: 'Plan Bonus',
+            valueLabel: `$${(bonusUsed / 100).toFixed(2)}`,
+            goalLabel: `/ $${(summary.plan_bonus / 100).toFixed(2)}`,
+            ratio: bonusRatio,
+            zone: bonusRatio >= 70 ? 'danger' : meterZone(bonusRatio),
+            rawScale: true
+        })
     }
 
     // ── 3. 本日の利用額メーター ──

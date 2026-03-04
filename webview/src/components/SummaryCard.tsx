@@ -46,7 +46,7 @@ export default function SummaryCard({ summary, userName, maxCost, meters }: Summ
   const onDemandDollar = (summary.ondemand_used / 100).toFixed(2);
   const onDemandLimitText = summary.ondemand_limit != null
     ? ` / $${(summary.ondemand_limit / 100).toFixed(0)}`
-    : ` (${summary.membership_type})`;
+    : '';
 
   // 最大COST（usage_based_costs: 既にドル単位）
   const maxCostDollar = (Number(maxCost) || 0).toFixed(2);

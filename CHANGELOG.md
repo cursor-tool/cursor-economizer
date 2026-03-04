@@ -4,6 +4,26 @@ All notable changes to "Cursor Economizer" will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.20] - 2026-03-04
+
+- Plan Bonus メーターの機能説明を README に追加
+
+---
+
+- Added Plan Bonus meter documentation to README
+
+## [0.1.19] - 2026-03-04
+
+- Plan Bonus メーターを追加 — ボーナス枠（breakdown.bonus）の加算量と消費量をモニタリング可能に
+- Plan Quota / Plan Bonus の表示をドル単位（$xx.xx）に変更
+- OnDemand 表示から membership_type の付記を削除
+
+---
+
+- Added Plan Bonus meter — monitor bonus quota (breakdown.bonus) allocation and consumption
+- Changed Plan Quota / Plan Bonus display to dollar format ($xx.xx)
+- Removed membership_type annotation from OnDemand display
+
 ## [0.1.18] - 2026-02-20
 
 - 軽微なバグの修正
@@ -195,3 +215,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 - Automatic data deletion (configurable retention days)
 - Cross-window exclusive control (fetch.lock / db-updated.json)
 - i18n support (English / Japanese)
+

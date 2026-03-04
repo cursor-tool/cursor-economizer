@@ -70,7 +70,7 @@ You can increase or decrease visible columns from tooltip `⚙️`.
 - **ステータスバー** — 利用率・累積金額をリアルタイム表示<br>**Status Bar** — Real-time usage rate and cost display
 - **詳細テーブル** — フィルタ・ページネーション付きイベント一覧<br>**Detail Table** — Event list with filter and pagination
 - **列幅・列順序変更** — ドラッグでリサイズ・並べ替え<br>**Column Resize & Reorder** — Drag to resize or reorder columns
-- **6メーターダッシュボード** — Eco / Free Quota / Today / 7 Days / Billing Cycle / Forecast<br>**6-Meter Dashboard** — Eco / Free Quota / Today / 7 Days / Billing Cycle / Forecast
+- **メーターダッシュボード** — Eco / Plan Quota / Plan Bonus / Today / 7 Days / Billing Cycle / Forecast<br>**Meter Dashboard** — Eco / Plan Quota / Plan Bonus / Today / 7 Days / Billing Cycle / Forecast
 - **メモ機能** — 各レコードにメモを追加・編集（IME 対応）<br>**Memo** — Add/edit memo per record (IME-friendly)
 - **自動更新** — 1〜15分間隔で自動データ取得<br>**Auto Refresh** — Automatic data fetch at 1–15 min intervals
 - **SQLite 永続化** — ローカル DB、複数ウィンドウ間同期<br>**SQLite Persistence** — Local DB, synced across windows
@@ -125,6 +125,18 @@ Open the table from Command Palette → `Cursor Economizer: Open Detail`, or too
 | 列順序変更 | Reorder    | ヘッダーD&D                  | Drag and drop header        |
 | メモ編集   | Edit Memo  | MEMO 列クリック → Enter 保存 | Click MEMO then press Enter |
 | データ更新 | Refresh    | 右下の更新ボタン             | Bottom-right refresh button |
+
+### Plan Bonus メーター
+
+### Plan Bonus Meter
+
+プランボーナスは公式に公開されておらず、公式サイトからも残量を確認できません。Cursor Economizer はこのボーナス枠を可視化し、加算量と消費量をメーターで表示します。残量をあらかじめ把握できるため、計画的にコーディングを進められます。  
+Plan bonuses are not publicly disclosed and cannot be checked on the official site. Cursor Economizer visualizes this bonus quota, showing the granted amount and consumption on a meter. Knowing the remaining balance in advance helps you plan your coding sessions.
+
+![Plan Bonus](img/plan_bonus.png)
+
+> ボーナスが発生している場合のみ表示されます。ボーナスは課金期間中に動的に増加することがあり、メーターはリアルタイムに反映します。  
+> Only displayed when a bonus exists. Bonuses can increase dynamically mid-cycle, and the meter reflects changes in real time.
 
 ### メモ機能
 
