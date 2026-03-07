@@ -4,6 +4,14 @@ All notable changes to "Cursor Economizer" will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.21] - 2026-03-08
+
+- プラン内料金での消費量をモニタリング可能に
+
+---
+
+- Added monitoring for token cost consumption within the plan
+
 ## [0.1.20] - 2026-03-04
 
 - Plan Bonus メーターの機能説明を README に追加

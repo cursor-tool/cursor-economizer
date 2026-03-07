@@ -70,7 +70,7 @@ You can increase or decrease visible columns from tooltip `⚙️`.
 - **ステータスバー** — 利用率・累積金額をリアルタイム表示<br>**Status Bar** — Real-time usage rate and cost display
 - **詳細テーブル** — フィルタ・ページネーション付きイベント一覧<br>**Detail Table** — Event list with filter and pagination
 - **列幅・列順序変更** — ドラッグでリサイズ・並べ替え<br>**Column Resize & Reorder** — Drag to resize or reorder columns
-- **メーターダッシュボード** — Eco / Plan Quota / Plan Bonus / Today / 7 Days / Billing Cycle / Forecast<br>**Meter Dashboard** — Eco / Plan Quota / Plan Bonus / Today / 7 Days / Billing Cycle / Forecast
+- **メーターダッシュボード** — Token 行（Eco / Today / 7 Days / Billing Cycle / Forecast / Plan Quota / Plan Bonus）+ COST 行（Eco / Today / 7 Days / Billing Cycle / Forecast）の2段構成。COST 行は On-Demand 利用がある場合のみ表示<br>**Meter Dashboard** — Two-row layout: Token row (Eco / Today / 7 Days / Billing Cycle / Forecast / Plan Quota / Plan Bonus) + COST row (Eco / Today / 7 Days / Billing Cycle / Forecast). COST row appears only when On-Demand usage exists
 - **メモ機能** — 各レコードにメモを追加・編集（IME 対応）<br>**Memo** — Add/edit memo per record (IME-friendly)
 - **自動更新** — 1〜15分間隔で自動データ取得<br>**Auto Refresh** — Automatic data fetch at 1–15 min intervals
 - **SQLite 永続化** — ローカル DB、複数ウィンドウ間同期<br>**SQLite Persistence** — Local DB, synced across windows
@@ -98,7 +98,7 @@ Shows the latest request info. Click to manually refresh.
 
 | Emoji | Condition    | Status (日本語) | Status (English) |
 | ----- | ------------ | --------------- | ---------------- |
-| 💎    | INCLUDED     | プラン内利用    | Included in plan |
+| 💎    | INCLUDED ($0 token) | プラン内利用（トークン $0） | Included ($0 token cost) |
 | 🆓    | $0           | 無料            | Free             |
 | ✅    | < $0.20      | 低コスト        | Low              |
 | ⚠️    | $0.20–$0.50  | 注意            | Caution          |
@@ -107,6 +107,9 @@ Shows the latest request info. Click to manually refresh.
 | ☠️    | $3.00–$10.00 | 超高コスト      | Very High        |
 | 🥶    | > $10.00     | 危険            | Critical         |
 | ❌    | ERRORED      | エラー          | Error            |
+
+> INCLUDED イベントでトークンコスト (`total_cents`) が $0 超の場合は、トークンコストに基づいて ✅〜🥶 の段階判定が適用されます。  
+> For INCLUDED events with token cost (`total_cents`) > $0, the cost-tier emoji (✅–🥶) is applied based on token cost.
 
 ---
 

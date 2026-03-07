@@ -34,6 +34,7 @@ function makeMockEvents(count: number): WebviewUsageEventRow[] {
         timestamp: String(now - i * 60_000),
         model: models[i % models.length],
         kind: kinds[i % kinds.length],
+        custom_subscription_name: null,
         max_mode: i % 3 === 0 ? 1 : null,
         requests_costs: i % 2 === 0 ? Math.floor(Math.random() * 100) : null,
         usage_based_costs: i % 3 === 0 ? Math.round(Math.random() * 500) / 100 : 0,
@@ -99,6 +100,12 @@ function meterZone(ratio: number): MeterZone {
     return 'normal'
 }
 
+// ── 失敗イベント判定（Eco / Forecast 計算から除外する） ──
+
+function isFailedEvent(kind: string): boolean {
+    return kind.includes('ERRORED_NOT_CHARGED') || kind.includes('ABORTED_NOT_CHARGED')
+}
+
 // ── エコメーター絵文字（UsageTable の6段階と同一） ──
 
 function ecoEmoji(avgDollars: number): string {
@@ -112,7 +119,7 @@ function ecoEmoji(avgDollars: number): string {
 
 // ── プラン種別判定（membership_type + limit_type + plan_limit の3項目評価） ──
 
-type PlanType = 'free' | 'pro' | 'team' | 'unknown'
+type PlanType = 'free' | 'pro' | 'ultra' | 'team' | 'unknown'
 
 function detectPlanType(summary: WebviewUsageSummaryRow): PlanType {
     const m = summary.membership_type?.toLowerCase() ?? ''
@@ -121,13 +128,14 @@ function detectPlanType(summary: WebviewUsageSummaryRow): PlanType {
 
     if (m === 'free' && l === 'user' && limit === 0) return 'free'
     if (m === 'enterprise' && l === 'team' && limit > 0) return 'team'
+    if (m === 'ultra' && l === 'user' && limit > 0) return 'ultra'
     if (m !== 'free' && limit > 0) return 'pro'
     return 'unknown'
 }
 
-// ── メーター ViewModel 構築 ──
+// ── Token メーター ViewModel 構築（total_cents ベース・常時表示） ──
 
-function buildMeters(
+function buildTokenMeters(
     events: WebviewUsageEventRow[],
     summary: WebviewUsageSummaryRow | null,
     ecoMeterThreshold: number,
@@ -142,36 +150,38 @@ function buildMeters(
     const cycleStartMs = new Date(summary.billing_cycle_start).getTime()
     const cycleEndMs = new Date(summary.billing_cycle_end).getTime()
 
-    // ── 1回のイベント走査で複数集計を同時に行う（usage_based_costs: ドル単位） ──
     let todayDollars = 0
     let sevenDayDollars = 0
     let cycleDollars = 0
-    let recent3DayDollars = 0 // 今日を含む直近3日間（課金期間内に限定）
+    let recent3DayDollars = 0
+    let recent3DayDollarsForForecast = 0
 
     const sevenDaysStartUtc = todayStartUtc - 6 * DAY_MS
-    // 直近3日の集計開始: 2日前の0時 or 課金期間開始のどちらか遅い方
     const threeDaysAgoStartUtc = todayStartUtc - 2 * DAY_MS
     const recent3WindowStart = Math.max(threeDaysAgoStartUtc, cycleStartMs)
 
     for (const e of events) {
         const ts = Number(e.timestamp)
-        const cost = Number(e.usage_based_costs) || 0
+        const cost = (Number(e.total_cents) || 0) / 100
         if (ts >= cycleStartMs && ts <= cycleEndMs) cycleDollars += cost
         if (ts >= todayStartUtc) todayDollars += cost
         if (ts >= sevenDaysStartUtc) sevenDayDollars += cost
-        if (ts >= recent3WindowStart) recent3DayDollars += cost
+        if (ts >= recent3WindowStart) {
+            recent3DayDollars += cost
+            if (!isFailedEvent(e.kind)) recent3DayDollarsForForecast += cost
+        }
     }
 
-    // ── 1. エコメーター（直近10イベント平均・usage_based_costs ドル単位） ──
-    const recentForEco = events.slice(0, 10)
+    // ── Eco（直近10件の total_cents 平均 → ドル換算・失敗イベント除外） ──
+    const recentForEco = events.filter((e) => !isFailedEvent(e.kind)).slice(0, 10)
     const avgDollars =
         recentForEco.length > 0
-            ? recentForEco.reduce((sum, e) => sum + (Number(e.usage_based_costs) || 0), 0) /
+            ? recentForEco.reduce((sum, e) => sum + (Number(e.total_cents) || 0) / 100, 0) /
               recentForEco.length
             : 0
     const ecoRatio = (avgDollars / ecoMeterThreshold) * 100
     meters.push({
-        id: 'eco',
+        id: 'token-eco',
         title: `${ecoEmoji(avgDollars)} Eco`,
         valueLabel: `$${avgDollars.toFixed(2)}`,
         goalLabel: `/ $${ecoMeterThreshold.toFixed(2)}`,
@@ -179,7 +189,64 @@ function buildMeters(
         zone: meterZone(ecoRatio)
     })
 
-    // ── 2. プラン枠メーター（プラン種別で分岐） ──
+    // ── Today ──
+    if (dailyUsageGoal > 0) {
+        const todayRatio = (todayDollars / dailyUsageGoal) * 100
+        meters.push({
+            id: 'token-today',
+            title: 'Today',
+            valueLabel: `$${todayDollars.toFixed(2)}`,
+            goalLabel: `/ $${dailyUsageGoal.toFixed(0)}`,
+            ratio: todayRatio,
+            zone: meterZone(todayRatio)
+        })
+    }
+
+    // ── 7 Days ──
+    if (dailyUsageGoal > 0) {
+        const sevenDayGoal = dailyUsageGoal * 7
+        const sevenDayRatio = (sevenDayDollars / sevenDayGoal) * 100
+        meters.push({
+            id: 'token-seven-day',
+            title: '7 Days',
+            valueLabel: `$${sevenDayDollars.toFixed(2)}`,
+            goalLabel: `/ $${sevenDayGoal.toFixed(0)}`,
+            ratio: sevenDayRatio,
+            zone: meterZone(sevenDayRatio)
+        })
+    }
+
+    // ── Billing Cycle ──
+    if (monthlyBudgetGoal > 0) {
+        const cycleRatio = (cycleDollars / monthlyBudgetGoal) * 100
+        meters.push({
+            id: 'token-cycle',
+            title: 'Billing Cycle',
+            valueLabel: `$${cycleDollars.toFixed(2)}`,
+            goalLabel: `/ $${monthlyBudgetGoal.toFixed(0)}`,
+            ratio: cycleRatio,
+            zone: meterZone(cycleRatio)
+        })
+    }
+
+    // ── Forecast（直近3日の日平均は失敗イベント除外） ──
+    if (monthlyBudgetGoal > 0) {
+        const recent3ActualDays = Math.max(1, (now.getTime() - recent3WindowStart) / DAY_MS)
+        const dailyAvgDollars = recent3DayDollarsForForecast / recent3ActualDays
+        const remainingDays = Math.max(0, (cycleEndMs - now.getTime()) / DAY_MS)
+        const forecastDollars = cycleDollars + dailyAvgDollars * remainingDays
+        const forecastRatio = (forecastDollars / monthlyBudgetGoal) * 100
+        meters.push({
+            id: 'token-forecast',
+            title: 'Forecast',
+            valueLabel: `$${forecastDollars.toFixed(2)}`,
+            goalLabel: `/ $${monthlyBudgetGoal.toFixed(0)}`,
+            ratio: forecastRatio,
+            zone: meterZone(forecastRatio)
+        })
+    }
+
+    // ── Plan Quota（プラン種別で分岐） ──
     const planType = detectPlanType(summary)
     switch (planType) {
         case 'free': {
@@ -205,6 +272,7 @@ function buildMeters(
             break
         }
         case 'pro':
+        case 'ultra':
         case 'team': {
             const planRatio = (summary.plan_used / summary.plan_limit) * 100
             meters.push({
@@ -235,7 +303,7 @@ function buildMeters(
         }
     }
 
-    // ── 2b. Plan Bonus メーター（plan_bonus > 0 の場合のみ。プラン種別不問） ──
+    // ── Plan Bonus（plan_bonus > 0 の場合のみ） ──
     if (summary.plan_bonus > 0) {
         const bonusUsed = summary.plan_total - summary.plan_included
         const bonusRatio = (bonusUsed / summary.plan_bonus) * 100
@@ -250,11 +318,72 @@ function buildMeters(
         })
     }
 
-    // ── 3. 本日の利用額メーター ──
+    return meters
+}
+
+// ── COST メーター ViewModel 構築（usage_based_costs ベース・条件表示） ──
+
+function buildOnDemandMeters(
+    events: WebviewUsageEventRow[],
+    summary: WebviewUsageSummaryRow | null,
+    ecoMeterThreshold: number,
+    dailyUsageGoal: number,
+    monthlyBudgetGoal: number
+): { meters: MeterViewModel[]; hasOnDemandUsage: boolean } {
+    if (!summary) return { meters: [], hasOnDemandUsage: false }
+
+    const meters: MeterViewModel[] = []
+    const now = new Date()
+    const todayStartUtc = localDayStartMs(now)
+    const cycleStartMs = new Date(summary.billing_cycle_start).getTime()
+    const cycleEndMs = new Date(summary.billing_cycle_end).getTime()
+
+    let todayDollars = 0
+    let sevenDayDollars = 0
+    let cycleDollars = 0
+    let recent3DayDollars = 0
+    let recent3DayDollarsForForecast = 0
+
+    const sevenDaysStartUtc = todayStartUtc - 6 * DAY_MS
+    const threeDaysAgoStartUtc = todayStartUtc - 2 * DAY_MS
+    const recent3WindowStart = Math.max(threeDaysAgoStartUtc, cycleStartMs)
+
+    for (const e of events) {
+        const ts = Number(e.timestamp)
+        const cost = Number(e.usage_based_costs) || 0
+        if (ts >= cycleStartMs && ts <= cycleEndMs) cycleDollars += cost
+        if (ts >= todayStartUtc) todayDollars += cost
+        if (ts >= sevenDaysStartUtc) sevenDayDollars += cost
+        if (ts >= recent3WindowStart) {
+            recent3DayDollars += cost
+            if (!isFailedEvent(e.kind)) recent3DayDollarsForForecast += cost
+        }
+    }
+
+    const hasOnDemandUsage = cycleDollars > 0
+
+    // ── Eco（直近10件の usage_based_costs 平均・失敗イベント除外） ──
+    const recentForEco = events.filter((e) => !isFailedEvent(e.kind)).slice(0, 10)
+    const avgDollars =
+        recentForEco.length > 0
+            ? recentForEco.reduce((sum, e) => sum + (Number(e.usage_based_costs) || 0), 0) /
+              recentForEco.length
+            : 0
+    const ecoRatio = (avgDollars / ecoMeterThreshold) * 100
+    meters.push({
+        id: 'cost-eco',
+        title: `${ecoEmoji(avgDollars)} Eco`,
+        valueLabel: `$${avgDollars.toFixed(2)}`,
+        goalLabel: `/ $${ecoMeterThreshold.toFixed(2)}`,
+        ratio: ecoRatio,
+        zone: meterZone(ecoRatio)
+    })
+
+    // ── Today ──
     if (dailyUsageGoal > 0) {
         const todayRatio = (todayDollars / dailyUsageGoal) * 100
         meters.push({
-            id: 'today',
+            id: 'cost-today',
             title: 'Today',
             valueLabel: `$${todayDollars.toFixed(2)}`,
             goalLabel: `/ $${dailyUsageGoal.toFixed(0)}`,
@@ -263,13 +392,13 @@ function buildMeters(
         })
     }
 
-    // ── 4. 過去7日の利用額メーター ──
+    // ── 7 Days ──
     if (dailyUsageGoal > 0) {
         const sevenDayGoal = dailyUsageGoal * 7
         const sevenDayRatio = (sevenDayDollars / sevenDayGoal) * 100
         meters.push({
-            id: 'seven-day',
-            title: 'Past 7 Days',
+            id: 'cost-seven-day',
+            title: '7 Days',
             valueLabel: `$${sevenDayDollars.toFixed(2)}`,
             goalLabel: `/ $${sevenDayGoal.toFixed(0)}`,
             ratio: sevenDayRatio,
@@ -277,11 +406,11 @@ function buildMeters(
         })
     }
 
-    // ── 5. 課金期間の利用額メーター ──
+    // ── Billing Cycle ──
     if (monthlyBudgetGoal > 0) {
         const cycleRatio = (cycleDollars / monthlyBudgetGoal) * 100
         meters.push({
-            id: 'cycle',
+            id: 'cost-cycle',
             title: 'Billing Cycle',
             valueLabel: `$${cycleDollars.toFixed(2)}`,
             goalLabel: `/ $${monthlyBudgetGoal.toFixed(0)}`,
@@ -290,25 +419,24 @@ function buildMeters(
         })
     }
 
-    // ── 6. 課金期間の利用予測額メーター ──
+    // ── Forecast（直近3日の日平均は失敗イベント除外） ──
     if (monthlyBudgetGoal > 0) {
-        // 今日を含む直近3日間の日次平均（課金期間開始直後は実際の日数で割る）
         const recent3ActualDays = Math.max(1, (now.getTime() - recent3WindowStart) / DAY_MS)
-        const dailyAvgDollars = recent3DayDollars / recent3ActualDays
+        const dailyAvgDollars = recent3DayDollarsForForecast / recent3ActualDays
         const remainingDays = Math.max(0, (cycleEndMs - now.getTime()) / DAY_MS)
         const forecastDollars = cycleDollars + dailyAvgDollars * remainingDays
         const forecastRatio = (forecastDollars / monthlyBudgetGoal) * 100
         meters.push({
-            id: 'forecast',
+            id: 'cost-forecast',
             title: 'Forecast',
-            valueLabel: `$${forecastDollars.toFixed(0)}`,
+            valueLabel: `$${forecastDollars.toFixed(2)}`,
             goalLabel: `/ $${monthlyBudgetGoal.toFixed(0)}`,
             ratio: forecastRatio,
             zone: meterZone(forecastRatio)
         })
     }
 
-    return meters
+    return { meters, hasOnDemandUsage }
 }
 
 // ── App ──
@@ -489,9 +617,15 @@ export default function App() {
         return max
     }, [events, summary])
 
-    // ── 6メーター ViewModel 構築 ──
-    const meters = useMemo(
-        () => buildMeters(events, summary, ecoMeterThreshold, dailyUsageGoal, monthlyBudgetGoal),
+    // ── Token メーター ViewModel 構築（total_cents ベース・常時表示） ──
+    const tokenMeters = useMemo(
+        () => buildTokenMeters(events, summary, ecoMeterThreshold, dailyUsageGoal, monthlyBudgetGoal),
+        [events, summary, ecoMeterThreshold, dailyUsageGoal, monthlyBudgetGoal]
+    )
+
+    // ── COST メーター ViewModel 構築（usage_based_costs ベース・条件表示） ──
+    const { meters: onDemandMeters, hasOnDemandUsage } = useMemo(
+        () => buildOnDemandMeters(events, summary, ecoMeterThreshold, dailyUsageGoal, monthlyBudgetGoal),
         [events, summary, ecoMeterThreshold, dailyUsageGoal, monthlyBudgetGoal]
     )
 
@@ -522,7 +656,9 @@ export default function App() {
                             summary={summary}
                             userName={userName}
                             maxCost={maxCostDollars}
-                            meters={meters}
+                            tokenMeters={tokenMeters}
+                            onDemandMeters={onDemandMeters}
+                            showOnDemand={hasOnDemandUsage}
                         />
                     )}
                     <UsageTable

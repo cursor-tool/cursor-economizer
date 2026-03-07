@@ -560,6 +560,7 @@ export default function UsageTable({
         getPaginationRowModel: getPaginationRowModel(),
         enableColumnResizing: true,
         columnResizeMode: 'onChange',
+        autoResetPageIndex: false,
         state: {
             columnVisibility: visibilityState,
             pagination,
