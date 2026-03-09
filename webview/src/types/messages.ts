@@ -161,6 +161,12 @@ export interface SaveColumnOrderMessage {
     columnOrder: string[]
 }
 
+/** Webview → Extension Host: VS Code 設定画面を開く */
+export interface OpenSettingsMessage {
+    type: 'openSettings'
+    settingId: string
+}
+
 // --- ユニオン型 ---
 
 /** Extension Host → Webview の全メッセージ型 */
@@ -176,3 +182,4 @@ export type WebviewToHostMessage =
     | UpdateMemoMessage
     | RequestRefreshMessage
     | SaveColumnOrderMessage
+    | OpenSettingsMessage

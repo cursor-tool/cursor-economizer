@@ -659,6 +659,10 @@ export default function App() {
                             tokenMeters={tokenMeters}
                             onDemandMeters={onDemandMeters}
                             showOnDemand={hasOnDemandUsage}
+                            ecoMeterThreshold={ecoMeterThreshold}
+                            dailyUsageGoal={dailyUsageGoal}
+                            monthlyBudgetGoal={monthlyBudgetGoal}
+                            onOpenSettings={(settingId) => postMessage({ type: 'openSettings', settingId })}
                         />
                     )}
                     <UsageTable

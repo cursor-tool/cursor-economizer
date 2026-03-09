@@ -27,9 +27,13 @@ interface SummaryCardProps {
   tokenMeters: MeterViewModel[];
   onDemandMeters: MeterViewModel[];
   showOnDemand: boolean;
+  ecoMeterThreshold: number;
+  dailyUsageGoal: number;
+  monthlyBudgetGoal: number;
+  onOpenSettings: (settingId: string) => void;
 }
 
-export default function SummaryCard({ summary, userName, maxCost, tokenMeters, onDemandMeters, showOnDemand }: SummaryCardProps) {
+export default function SummaryCard({ summary, userName, maxCost, tokenMeters, onDemandMeters, showOnDemand, ecoMeterThreshold, dailyUsageGoal, monthlyBudgetGoal, onOpenSettings }: SummaryCardProps) {
   const fmtCycleDate = (iso: string): string => {
     const d = new Date(iso);
     const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -89,6 +93,11 @@ export default function SummaryCard({ summary, userName, maxCost, tokenMeters, o
     fontSize: '11px',
   };
 
+  const settingsIconStyle: React.CSSProperties = {
+    cursor: 'pointer',
+    opacity: 0.8,
+  };
+
   const meterGridStyle: React.CSSProperties = {
     display: 'grid',
     gridTemplateColumns: `repeat(auto-fill, minmax(${METER_MIN_COL_WIDTH}, 1fr))`,
@@ -131,6 +140,27 @@ export default function SummaryCard({ summary, userName, maxCost, tokenMeters, o
         <div style={infoItemStyle}>
           <div style={infoLabelStyle}>Max Cost</div>
           <div style={infoValueStyle}>${maxCostDollar}</div>
+        </div>
+
+        <div style={infoItemStyle}>
+          <div style={infoLabelStyle}>
+            <span style={settingsIconStyle} onClick={() => onOpenSettings('cursorEconomizer.ecoMeterThreshold')}>⚙️</span> Eco
+          </div>
+          <div style={infoValueStyle}>${ecoMeterThreshold.toFixed(2)}</div>
+        </div>
+
+        <div style={infoItemStyle}>
+          <div style={infoLabelStyle}>
+            <span style={settingsIconStyle} onClick={() => onOpenSettings('cursorEconomizer.dailyUsageGoal')}>⚙️</span> Day Goal
+          </div>
+          <div style={infoValueStyle}>{dailyUsageGoal > 0 ? `$${dailyUsageGoal.toFixed(2)}` : 'off'}</div>
+        </div>
+
+        <div style={infoItemStyle}>
+          <div style={infoLabelStyle}>
+            <span style={settingsIconStyle} onClick={() => onOpenSettings('cursorEconomizer.monthlyBudgetGoal')}>⚙️</span> Month Goal
+          </div>
+          <div style={infoValueStyle}>{monthlyBudgetGoal > 0 ? `$${monthlyBudgetGoal.toFixed(2)}` : 'off'}</div>
         </div>
       </div>
 

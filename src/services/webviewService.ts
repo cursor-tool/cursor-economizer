@@ -161,6 +161,11 @@ class WebviewService {
                     msg as { type: string; columnOrder: string[] }
                 )
                 break
+            case 'openSettings': {
+                const { settingId } = msg as { type: string; settingId: string }
+                vscode.commands.executeCommand('workbench.action.openSettings', settingId)
+                break
+            }
             default:
                 console.warn(`Cursor Economizer: Webview から未知のメッセージタイプ: ${type}`)
                 break
