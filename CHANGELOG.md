@@ -4,6 +4,14 @@ All notable changes to "Cursor Economizer" will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.23] - 2026-03-16
+
+- 複数ワークスペースからの同時使用時にメモリエラーが発生するバグを修正
+
+---
+
+- Fixed a memory error that occurred when using multiple workspaces simultaneously
+
 ## [0.1.22] - 2026-03-10
 
 - サマリカードに設定値（Eco / Day Goal / Month Goal）を表示、⚙️ クリックで設定画面を直接開けるように

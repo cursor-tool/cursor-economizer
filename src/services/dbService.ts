@@ -146,6 +146,8 @@ class DbService {
     private SQL: SqlJsStatic | null = null
     private dbPath: string = ''
     private globalStoragePath: string = ''
+    private _lastPersistAt: number = 0
+    private _operationInProgress = false
 
     /**
      * sql.js WASM 初期化 + globalStorageUri ディレクトリ作成 + DB 読込 or 新規作成 + スキーマ実行。
@@ -291,6 +293,8 @@ class DbService {
         const buffer = Buffer.from(data)
         fs.writeFileSync(this.dbPath, buffer)
 
+        this._lastPersistAt = Date.now()
+
         // db-updated.json タッチ（他 Window の FileWatcher で変更検知用）
         // タッチ失敗は DB 永続化自体の成功を覆さない（ログ出力のみ）
         try {
@@ -306,11 +310,27 @@ class DbService {
     }
 
     /**
+     * 直近の persist() が自ウィンドウによるものかを判定する。
+     * FileWatcher の自己発火防止に使用。
+     * 閾値: 2000ms（FileWatcher のイベント遅延を考慮）
+     */
+    isRecentPersist(): boolean {
+        return (Date.now() - this._lastPersistAt) < 2000
+    }
+
+    /**
      * ディスクから DB を再読込（他 Window の変更を取り込む）。
      * アトミック: 新 DB インスタンスの作成に成功してから旧インスタンスを閉じる。
      * 途中で失敗しても旧 DB は閉じない（壊れた状態を防ぐ）。
      */
     reload(): void {
+        if (this._operationInProgress) {
+            throw new Error(
+                'Cursor Economizer: reload() が DB 操作中に呼ばれました。' +
+                'これは自己発火防止（Part 1）の不備を示します'
+            )
+        }
+
         if (!this.SQL) {
             throw new Error('sql.js が初期化されていません')
         }
@@ -332,7 +352,7 @@ class DbService {
 
     /**
      * 現在のメモリ上 DB インスタンスを返す。
-     * DB が閉じられている場合は自動的に reload() で復旧を試みる。
+     * DB が無効な場合は throw する（フォールバック reload() は行わない）。
      */
     getDb(): Database {
         if (!this.db) {
@@ -341,9 +361,12 @@ class DbService {
 
         try {
             this.db.exec('SELECT 1')
-        } catch {
-            console.warn('Cursor Economizer: DB connection lost — reloading from disk')
-            this.reload()
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err)
+            throw new Error(
+                `DB インスタンスが無効です (${message})。` +
+                'reload() の競合が発生した可能性があります'
+            )
         }
 
         return this.db
@@ -361,6 +384,41 @@ class DbService {
      */
     getGlobalStoragePath(): string {
         return this.globalStoragePath
+    }
+
+    /**
+     * DB 操作をアトミックに実行する。
+     * reload() → fn(db) → persist() の一連を保護する。
+     *
+     * _operationInProgress が true の間に reload() が呼ばれた場合、
+     * reload() はエラーを throw する（フォールバックしない）。
+     *
+     * @param fn DB インスタンスを受け取り、同期的に DB 操作を行う関数
+     * @param options.persist fn 完了後に persist() を呼ぶかどうか（デフォルト: true）
+     * @param options.reload fn 実行前に reload() を呼ぶかどうか（デフォルト: true）
+     */
+    withDb<T>(fn: (db: Database) => T, options?: { persist?: boolean; reload?: boolean }): T {
+        const shouldPersist = options?.persist ?? true
+        const shouldReload = options?.reload ?? true
+
+        if (this._operationInProgress) {
+            throw new Error('DB 操作が進行中です。再入は許可されていません')
+        }
+
+        this._operationInProgress = true
+        try {
+            if (shouldReload) {
+                this.reload()
+            }
+            const db = this.getDb()
+            const result = fn(db)
+            if (shouldPersist) {
+                this.persist()
+            }
+            return result
+        } finally {
+            this._operationInProgress = false
+        }
     }
 
     /**

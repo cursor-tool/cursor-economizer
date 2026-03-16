@@ -192,22 +192,13 @@ class WebviewService {
         const { timestamp, model, owningUser, note } = msg
 
         try {
-            // 他 Window の変更を取り込む
-            dbService.reload()
+            dbService.withDb((db) => {
+                db.run(
+                    'UPDATE usage_events SET note = ? WHERE timestamp = ? AND model = ? AND owning_user = ?',
+                    [note, timestamp, model, owningUser]
+                )
+            })
 
-            // reload() 後に getDb() を呼ぶ（reload() 前の参照は無効化される）
-            const db = dbService.getDb()
-
-            // UPDATE: note カラムのみ更新。行特定キーは (timestamp, model, owning_user)
-            db.run(
-                'UPDATE usage_events SET note = ? WHERE timestamp = ? AND model = ? AND owning_user = ?',
-                [note, timestamp, model, owningUser]
-            )
-
-            // DB 永続化 + db-updated.json タッチ（他 Window 通知）
-            dbService.persist()
-
-            // Webview に更新確認を返信
             this.postToWebview({
                 type: 'memoUpdated',
                 timestamp,
@@ -221,7 +212,6 @@ class WebviewService {
             const message = err instanceof Error ? err.message : 'メモの更新に失敗しました'
             console.error('Cursor Economizer: メモ更新失敗:', err)
 
-            // Webview にエラー通知（エラー握りつぶし禁止）
             this.postToWebview({
                 type: 'error',
                 message: `メモの更新に失敗しました: ${message}`
@@ -244,15 +234,12 @@ class WebviewService {
         const { columnOrder } = msg
 
         try {
-            dbService.reload()
-            const db = dbService.getDb()
-
-            db.run(
-                'REPLACE INTO table_settings (key, value) VALUES (?, ?)',
-                ['column_order', JSON.stringify(columnOrder)]
-            )
-
-            dbService.persist()
+            dbService.withDb((db) => {
+                db.run(
+                    'REPLACE INTO table_settings (key, value) VALUES (?, ?)',
+                    ['column_order', JSON.stringify(columnOrder)]
+                )
+            })
 
             console.log(
                 `Cursor Economizer: カラム並び順保存完了 (${columnOrder.length} columns)`
@@ -283,142 +270,129 @@ class WebviewService {
      * 他 Window でデータ更新された場合でも最新データを表示するため。
      */
     sendDataToWebview(): void {
-        // ディスクから最新 DB を再読込（他 Window の変更や直前の refreshData 保存を取り込む）
-        dbService.reload()
-        const db = dbService.getDb()
+        if (!this.panel) {
+            return
+        }
 
-        // ── ユーザーマップ構築 + ロール判定 ──
-        const { userMap, myRole, myUserId } = this.buildUserContext(db)
-        const userName = myUserId !== null ? (userMap[String(myUserId)] ?? null) : null
+        dbService.withDb((db) => {
+            const { userMap, myRole, myUserId } = this.buildUserContext(db)
+            const userName = myUserId !== null ? (userMap[String(myUserId)] ?? null) : null
 
-        // ── 自身の所属チーム ID を取得 ──
-        // teams テーブルの最新レコードの id を使い、usage_events.owning_team でフィルタする
-        const myTeamId = this.getMyTeamId(db)
+            const myTeamId = this.getMyTeamId(db)
 
-        // ── WHERE 条件の構築（チームフィルタ + ロールフィルタ） ──
-        const whereClauses: string[] = []
-        const whereParams: string[] = []
+            const whereClauses: string[] = []
+            const whereParams: string[] = []
 
-        if (myTeamId !== null) {
-            // チーム所属: チームのイベントに絞る
-            whereClauses.push('owning_team = ?')
-            whereParams.push(String(myTeamId))
-            // MEMBER（非管理者）は自身のデータのみ表示。OWNER は全メンバー分を表示
-            if (myRole === 'TEAM_ROLE_MEMBER' && myUserId !== null) {
+            if (myTeamId !== null) {
+                whereClauses.push('owning_team = ?')
+                whereParams.push(String(myTeamId))
+                if (myRole === 'TEAM_ROLE_MEMBER' && myUserId !== null) {
+                    whereClauses.push('owning_user = ?')
+                    whereParams.push(String(myUserId))
+                }
+            } else if (myUserId !== null) {
                 whereClauses.push('owning_user = ?')
                 whereParams.push(String(myUserId))
             }
-        } else if (myUserId !== null) {
-            // チーム未所属（個人・無料プラン等）: 自身のデータのみ表示
-            // トークン切替後に旧ユーザーのイベントが DB に残っていても混入しない
-            whereClauses.push('owning_user = ?')
-            whereParams.push(String(myUserId))
-        }
 
-        const whereClause = whereClauses.length > 0 ? ` WHERE ${whereClauses.join(' AND ')}` : ''
+            const whereClause = whereClauses.length > 0 ? ` WHERE ${whereClauses.join(' AND ')}` : ''
 
-        // ── totalCount: LIMIT 適用前の全件数（フィルタ適用後） ──
-        const countSql = `SELECT COUNT(*) FROM usage_events${whereClause}`
-        const countResult =
-            whereParams.length > 0 ? db.exec(countSql, whereParams) : db.exec(countSql)
-        const totalCount =
-            countResult.length > 0 && countResult[0].values.length > 0
-                ? (countResult[0].values[0][0] as number)
-                : 0
+            const countSql = `SELECT COUNT(*) FROM usage_events${whereClause}`
+            const countResult =
+                whereParams.length > 0 ? db.exec(countSql, whereParams) : db.exec(countSql)
+            const totalCount =
+                countResult.length > 0 && countResult[0].values.length > 0
+                    ? (countResult[0].values[0][0] as number)
+                    : 0
 
-        // ── events: timestamp DESC で最大 10000 件（フィルタ適用） ──
-        const eventsSql = `SELECT * FROM usage_events${whereClause} ORDER BY timestamp DESC LIMIT 10000`
-        const eventsResult =
-            whereParams.length > 0 ? db.exec(eventsSql, whereParams) : db.exec(eventsSql)
-        const events: Record<string, unknown>[] = []
-        if (eventsResult.length > 0 && eventsResult[0].values.length > 0) {
-            const columns = eventsResult[0].columns
-            for (const row of eventsResult[0].values) {
+            const eventsSql = `SELECT * FROM usage_events${whereClause} ORDER BY timestamp DESC LIMIT 10000`
+            const eventsResult =
+                whereParams.length > 0 ? db.exec(eventsSql, whereParams) : db.exec(eventsSql)
+            const events: Record<string, unknown>[] = []
+            if (eventsResult.length > 0 && eventsResult[0].values.length > 0) {
+                const columns = eventsResult[0].columns
+                for (const row of eventsResult[0].values) {
+                    const obj: Record<string, unknown> = {}
+                    for (let i = 0; i < columns.length; i++) {
+                        if (columns[i] === 'raw_json' || columns[i] === 'id') {
+                            continue
+                        }
+                        obj[columns[i]] = row[i]
+                    }
+                    events.push(obj)
+                }
+            }
+
+            const summaryResult = db.exec(
+                'SELECT * FROM usage_summary ORDER BY fetched_at DESC LIMIT 1'
+            )
+            let summary: Record<string, unknown> | null = null
+            if (summaryResult.length > 0 && summaryResult[0].values.length > 0) {
+                const columns = summaryResult[0].columns
+                const values = summaryResult[0].values[0]
                 const obj: Record<string, unknown> = {}
                 for (let i = 0; i < columns.length; i++) {
-                    // raw_json / id を除外
                     if (columns[i] === 'raw_json' || columns[i] === 'id') {
                         continue
                     }
-                    obj[columns[i]] = row[i]
+                    obj[columns[i]] = values[i]
                 }
-                events.push(obj)
+                summary = obj
             }
-        }
 
-        // ── summary: 最新 1 件 ──
-        const summaryResult = db.exec(
-            'SELECT * FROM usage_summary ORDER BY fetched_at DESC LIMIT 1'
-        )
-        let summary: Record<string, unknown> | null = null
-        if (summaryResult.length > 0 && summaryResult[0].values.length > 0) {
-            const columns = summaryResult[0].columns
-            const values = summaryResult[0].values[0]
-            const obj: Record<string, unknown> = {}
-            for (let i = 0; i < columns.length; i++) {
-                // raw_json / id を除外
-                if (columns[i] === 'raw_json' || columns[i] === 'id') {
-                    continue
+            const cfg = vscode.workspace.getConfiguration('cursorEconomizer')
+            const pageSize = cfg.get<number>('pageSize', 500)
+            const columnVisibility = {
+                kind: cfg.get<boolean>('columns.kind.visible', false),
+                max_mode: cfg.get<boolean>('columns.maxMode.visible', false),
+                is_token_based_call: cfg.get<boolean>('columns.tokenBased.visible', false),
+                is_chargeable: cfg.get<boolean>('columns.chargeable.visible', false),
+                is_headless: cfg.get<boolean>('columns.headless.visible', false),
+                owning_user: cfg.get<boolean>('columns.user.visible', false),
+                cursor_token_fee: cfg.get<boolean>('columns.fee.visible', false)
+            }
+
+            let columnOrder: string[] | undefined
+            try {
+                const orderResult = db.exec(
+                    "SELECT value FROM table_settings WHERE key = 'column_order'"
+                )
+                if (orderResult.length > 0 && orderResult[0].values.length > 0) {
+                    columnOrder = JSON.parse(orderResult[0].values[0][0] as string)
                 }
-                obj[columns[i]] = values[i]
+            } catch (err) {
+                const message = err instanceof Error ? err.message : String(err)
+                console.error('Cursor Economizer: columnOrder 読み取り失敗:', message)
             }
-            summary = obj
-        }
 
-        // ── 表示設定を読み取り ──
-        const cfg = vscode.workspace.getConfiguration('cursorEconomizer')
-        const pageSize = cfg.get<number>('pageSize', 500)
-        const columnVisibility = {
-            kind: cfg.get<boolean>('columns.kind.visible', false),
-            max_mode: cfg.get<boolean>('columns.maxMode.visible', false),
-            is_token_based_call: cfg.get<boolean>('columns.tokenBased.visible', false),
-            is_chargeable: cfg.get<boolean>('columns.chargeable.visible', false),
-            is_headless: cfg.get<boolean>('columns.headless.visible', false),
-            owning_user: cfg.get<boolean>('columns.user.visible', false),
-            cursor_token_fee: cfg.get<boolean>('columns.fee.visible', false)
-        }
-
-        // ── columnOrder: table_settings から読み取り ──
-        let columnOrder: string[] | undefined
-        try {
-            const orderResult = db.exec(
-                "SELECT value FROM table_settings WHERE key = 'column_order'"
+            console.log(
+                `Cursor Economizer: sendDataToWebview totalCount=${totalCount}, events.length=${events.length}, summary=${summary ? 'yes' : 'null'}, myRole=${myRole}, userMap keys=${Object.keys(userMap).length}`
             )
-            if (orderResult.length > 0 && orderResult[0].values.length > 0) {
-                columnOrder = JSON.parse(orderResult[0].values[0][0] as string)
-            }
-        } catch (err) {
-            const message = err instanceof Error ? err.message : String(err)
-            console.error('Cursor Economizer: columnOrder 読み取り失敗:', message)
-        }
 
-        console.log(
-            `Cursor Economizer: sendDataToWebview totalCount=${totalCount}, events.length=${events.length}, summary=${summary ? 'yes' : 'null'}, myRole=${myRole}, userMap keys=${Object.keys(userMap).length}`
-        )
+            const autoRefreshEnabled = cfg.get<boolean>('autoRefreshEnabled', true)
+            const autoRefreshIntervalMinutes = cfg.get<number>('autoRefreshIntervalMinutes', 3)
+            const ecoMeterThreshold = cfg.get<number>('ecoMeterThreshold', 1.0)
+            const dailyUsageGoal = cfg.get<number>('dailyUsageGoal', 0)
+            const monthlyBudgetGoal = cfg.get<number>('monthlyBudgetGoal', 0)
 
-        const autoRefreshEnabled = cfg.get<boolean>('autoRefreshEnabled', true)
-        const autoRefreshIntervalMinutes = cfg.get<number>('autoRefreshIntervalMinutes', 3)
-        const ecoMeterThreshold = cfg.get<number>('ecoMeterThreshold', 1.0)
-        const dailyUsageGoal = cfg.get<number>('dailyUsageGoal', 0)
-        const monthlyBudgetGoal = cfg.get<number>('monthlyBudgetGoal', 0)
-
-        this.postToWebview({
-            type: 'dataLoaded',
-            events,
-            totalCount,
-            summary,
-            userMap,
-            myRole,
-            userName,
-            columnVisibility,
-            pageSize,
-            autoRefreshEnabled,
-            autoRefreshIntervalMinutes,
-            ecoMeterThreshold,
-            dailyUsageGoal,
-            monthlyBudgetGoal,
-            columnOrder
-        })
+            this.postToWebview({
+                type: 'dataLoaded',
+                events,
+                totalCount,
+                summary,
+                userMap,
+                myRole,
+                userName,
+                columnVisibility,
+                pageSize,
+                autoRefreshEnabled,
+                autoRefreshIntervalMinutes,
+                ecoMeterThreshold,
+                dailyUsageGoal,
+                monthlyBudgetGoal,
+                columnOrder
+            })
+        }, { persist: false })
     }
 
     /**

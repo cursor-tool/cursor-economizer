@@ -58,7 +58,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             )
         )
         const onDbUpdated = () => {
-            dbService.reload()
+            if (dbService.isRecentPersist()) {
+                console.log('Cursor Economizer: 自ウィンドウの persist() → reload スキップ')
+                return
+            }
+
             statusBarService.refresh().catch((err2) => {
                 const message = err2 instanceof Error ? err2.message : String(err2)
                 console.error('Cursor Economizer: StatusBar 更新失敗 (FileWatcher):', message)
@@ -283,12 +287,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                                 console.log(
                                     'Cursor Economizer: チーム未所属のため API-D スキップ'
                                 )
-                                // 旧トークンの team_members が残留すると
-                                // ロール判定や表示フィルタに影響するためクリアする
-                                dbService.reload()
-                                const db = dbService.getDb()
-                                db.run('DELETE FROM team_members')
-                                dbService.persist()
+                                dbService.withDb((db) => {
+                                    db.run('DELETE FROM team_members')
+                                })
                                 console.log(
                                     'Cursor Economizer: team_members をクリアしました（チーム未所属）'
                                 )
@@ -531,10 +532,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                                 console.log(
                                     'Cursor Economizer: チーム未所属のため API-D スキップ'
                                 )
-                                dbService.reload()
-                                const db = dbService.getDb()
-                                db.run('DELETE FROM team_members')
-                                dbService.persist()
+                                dbService.withDb((db) => {
+                                    db.run('DELETE FROM team_members')
+                                })
                                 console.log(
                                     'Cursor Economizer: team_members をクリアしました（チーム未所属）'
                                 )

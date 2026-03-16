@@ -760,93 +760,77 @@ class ApiService {
       WHERE timestamp = ? AND model = ? AND owning_user = ?
     `
 
-        // ディスクから最新 DB を再読込（他 Window の変更を取り込み）
-        dbService.reload()
-
-        // reload() 後に DB インスタンスを取得する（reload は内部で旧インスタンスを close して新規作成する）
-        const db = dbService.getDb()
-
-        try {
+        dbService.withDb((db) => {
             db.run('BEGIN TRANSACTION')
-
-            for (const event of events) {
-                const rawJson = JSON.stringify(event)
-                const maxMode = event.maxMode != null ? (event.maxMode ? 1 : 0) : null
-                const requestsCosts = event.requestsCosts ?? null
-                const inputTokens = event.tokenUsage.inputTokens ?? 0
-                const outputTokens = event.tokenUsage.outputTokens ?? 0
-                const cacheWriteTokens = event.tokenUsage.cacheWriteTokens ?? 0
-                const cacheReadTokens = event.tokenUsage.cacheReadTokens ?? 0
-                const totalCents = event.tokenUsage.totalCents ?? 0
-                const isTokenBasedCall = event.isTokenBasedCall ? 1 : 0
-                const isChargeable = event.isChargeable ? 1 : 0
-                const isHeadless = event.isHeadless ? 1 : 0
-
-                const customSubscriptionName = event.customSubscriptionName ?? null
-
-                // Step 1: INSERT OR IGNORE（新規行のみ挿入）
-                db.run(insertSql, [
-                    event.timestamp,
-                    event.model,
-                    event.kind,
-                    customSubscriptionName,
-                    maxMode,
-                    requestsCosts,
-                    event.usageBasedCosts,
-                    isTokenBasedCall,
-                    inputTokens,
-                    outputTokens,
-                    cacheWriteTokens,
-                    cacheReadTokens,
-                    totalCents,
-                    event.owningUser,
-                    event.owningTeam,
-                    event.cursorTokenFee,
-                    isChargeable,
-                    isHeadless,
-                    rawJson,
-                    fetchedAt
-                ])
-
-                // Step 2: UPDATE（既存行の note 以外を更新）
-                db.run(updateSql, [
-                    event.kind,
-                    customSubscriptionName,
-                    maxMode,
-                    requestsCosts,
-                    event.usageBasedCosts,
-                    isTokenBasedCall,
-                    inputTokens,
-                    outputTokens,
-                    cacheWriteTokens,
-                    cacheReadTokens,
-                    totalCents,
-                    event.cursorTokenFee,
-                    isChargeable,
-                    isHeadless,
-                    rawJson,
-                    fetchedAt,
-                    // WHERE 条件
-                    event.timestamp,
-                    event.model,
-                    event.owningUser
-                ])
-            }
-
-            db.run('COMMIT')
-        } catch (err) {
-            // ロールバックでトランザクションを破棄（部分書込防止）
             try {
-                db.run('ROLLBACK')
-            } catch {
-                // ROLLBACK 自体の失敗はログのみ（元のエラーを優先）
-                console.error('Cursor Economizer: ROLLBACK failed')
-            }
-            throw err
-        }
+                for (const event of events) {
+                    const rawJson = JSON.stringify(event)
+                    const maxMode = event.maxMode != null ? (event.maxMode ? 1 : 0) : null
+                    const requestsCosts = event.requestsCosts ?? null
+                    const inputTokens = event.tokenUsage.inputTokens ?? 0
+                    const outputTokens = event.tokenUsage.outputTokens ?? 0
+                    const cacheWriteTokens = event.tokenUsage.cacheWriteTokens ?? 0
+                    const cacheReadTokens = event.tokenUsage.cacheReadTokens ?? 0
+                    const totalCents = event.tokenUsage.totalCents ?? 0
+                    const isTokenBasedCall = event.isTokenBasedCall ? 1 : 0
+                    const isChargeable = event.isChargeable ? 1 : 0
+                    const isHeadless = event.isHeadless ? 1 : 0
 
-        // ディスクに永続化
-        dbService.persist()
+                    const customSubscriptionName = event.customSubscriptionName ?? null
+
+                    db.run(insertSql, [
+                        event.timestamp,
+                        event.model,
+                        event.kind,
+                        customSubscriptionName,
+                        maxMode,
+                        requestsCosts,
+                        event.usageBasedCosts,
+                        isTokenBasedCall,
+                        inputTokens,
+                        outputTokens,
+                        cacheWriteTokens,
+                        cacheReadTokens,
+                        totalCents,
+                        event.owningUser,
+                        event.owningTeam,
+                        event.cursorTokenFee,
+                        isChargeable,
+                        isHeadless,
+                        rawJson,
+                        fetchedAt
+                    ])
+
+                    db.run(updateSql, [
+                        event.kind,
+                        customSubscriptionName,
+                        maxMode,
+                        requestsCosts,
+                        event.usageBasedCosts,
+                        isTokenBasedCall,
+                        inputTokens,
+                        outputTokens,
+                        cacheWriteTokens,
+                        cacheReadTokens,
+                        totalCents,
+                        event.cursorTokenFee,
+                        isChargeable,
+                        isHeadless,
+                        rawJson,
+                        fetchedAt,
+                        event.timestamp,
+                        event.model,
+                        event.owningUser
+                    ])
+                }
+                db.run('COMMIT')
+            } catch (err) {
+                try { db.run('ROLLBACK') } catch {
+                    console.error('Cursor Economizer: ROLLBACK failed')
+                }
+                throw err
+            }
+        })
 
         console.log(`Cursor Economizer: ${events.length}件のイベントを保存しました`)
     }
@@ -925,16 +909,6 @@ class ApiService {
         const fetchedAt = new Date().toISOString()
         const rawJson = JSON.stringify(summary)
 
-        // ディスクから最新 DB を再読込（他 Window の変更を取り込み）
-        dbService.reload()
-
-        // reload() 後に DB インスタンスを取得する
-        const db = dbService.getDb()
-
-        // 最新スナップショットのみ保持（DELETE → INSERT）
-        // 旧トークンのサマリが残ると limit_type / membership_type 等が誤表示されるため
-        db.run('DELETE FROM usage_summary')
-
         const insertSql = `
       INSERT INTO usage_summary (
         billing_cycle_start, billing_cycle_end,
@@ -959,38 +933,38 @@ class ApiService {
       )
     `
 
-        db.run(insertSql, [
-            summary.billingCycleStart,
-            summary.billingCycleEnd,
-            summary.membershipType,
-            summary.limitType,
-            summary.isUnlimited ? 1 : 0,
-            summary.autoModelSelectedDisplayMessage ?? null,
-            summary.namedModelSelectedDisplayMessage ?? null,
-            summary.individualUsage.plan.enabled ? 1 : 0,
-            summary.individualUsage.plan.used,
-            summary.individualUsage.plan.limit,
-            summary.individualUsage.plan.remaining,
-            summary.individualUsage.plan.breakdown.included,
-            summary.individualUsage.plan.breakdown.bonus,
-            summary.individualUsage.plan.breakdown.total,
-            summary.individualUsage.plan.autoPercentUsed,
-            summary.individualUsage.plan.apiPercentUsed,
-            summary.individualUsage.plan.totalPercentUsed,
-            summary.individualUsage.onDemand.enabled ? 1 : 0,
-            summary.individualUsage.onDemand.used,
-            summary.individualUsage.onDemand.limit,
-            summary.individualUsage.onDemand.remaining,
-            summary.teamUsage.onDemand.enabled ? 1 : 0,
-            summary.teamUsage.onDemand.used,
-            summary.teamUsage.onDemand.limit,
-            summary.teamUsage.onDemand.remaining,
-            rawJson,
-            fetchedAt
-        ])
-
-        // ディスクに永続化
-        dbService.persist()
+        dbService.withDb((db) => {
+            db.run('DELETE FROM usage_summary')
+            db.run(insertSql, [
+                summary.billingCycleStart,
+                summary.billingCycleEnd,
+                summary.membershipType,
+                summary.limitType,
+                summary.isUnlimited ? 1 : 0,
+                summary.autoModelSelectedDisplayMessage ?? null,
+                summary.namedModelSelectedDisplayMessage ?? null,
+                summary.individualUsage.plan.enabled ? 1 : 0,
+                summary.individualUsage.plan.used,
+                summary.individualUsage.plan.limit,
+                summary.individualUsage.plan.remaining,
+                summary.individualUsage.plan.breakdown.included,
+                summary.individualUsage.plan.breakdown.bonus,
+                summary.individualUsage.plan.breakdown.total,
+                summary.individualUsage.plan.autoPercentUsed,
+                summary.individualUsage.plan.apiPercentUsed,
+                summary.individualUsage.plan.totalPercentUsed,
+                summary.individualUsage.onDemand.enabled ? 1 : 0,
+                summary.individualUsage.onDemand.used,
+                summary.individualUsage.onDemand.limit,
+                summary.individualUsage.onDemand.remaining,
+                summary.teamUsage.onDemand.enabled ? 1 : 0,
+                summary.teamUsage.onDemand.used,
+                summary.teamUsage.onDemand.limit,
+                summary.teamUsage.onDemand.remaining,
+                rawJson,
+                fetchedAt
+            ])
+        })
 
         console.log('Cursor Economizer: usage_summary を保存しました')
     }
@@ -1032,28 +1006,26 @@ class ApiService {
         const fetchedAt = new Date().toISOString()
         const rawJson = JSON.stringify(me)
 
-        dbService.reload()
-        const db = dbService.getDb()
-
-        db.run('DELETE FROM auth_me')
-        db.run(
-            `INSERT INTO auth_me (id, email, email_verified, name, sub, created_at, updated_at, picture, raw_json, fetched_at)
+        dbService.withDb((db) => {
+            db.run('DELETE FROM auth_me')
+            db.run(
+                `INSERT INTO auth_me (id, email, email_verified, name, sub, created_at, updated_at, picture, raw_json, fetched_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-                me.id,
-                me.email,
-                me.email_verified ? 1 : 0,
-                me.name,
-                me.sub,
-                me.created_at,
-                me.updated_at,
-                me.picture,
-                rawJson,
-                fetchedAt
-            ]
-        )
+                [
+                    me.id,
+                    me.email,
+                    me.email_verified ? 1 : 0,
+                    me.name,
+                    me.sub,
+                    me.created_at,
+                    me.updated_at,
+                    me.picture,
+                    rawJson,
+                    fetchedAt
+                ]
+            )
+        })
 
-        dbService.persist()
         console.log('Cursor Economizer: auth_me を保存しました')
     }
 
@@ -1098,30 +1070,27 @@ class ApiService {
         const fetchedAt = new Date().toISOString()
         const rawJson = JSON.stringify(team)
 
-        dbService.reload()
-        const db = dbService.getDb()
-
-        db.run('DELETE FROM team_members')
-
         const insertSql = `
       INSERT INTO team_members (id, name, role, email, user_id, team_id, raw_json, fetched_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `
 
-        for (const m of team.teamMembers) {
-            db.run(insertSql, [
-                m.id,
-                m.name ?? '',
-                m.role,
-                m.email,
-                team.userId,
-                teamId,
-                rawJson,
-                fetchedAt
-            ])
-        }
+        dbService.withDb((db) => {
+            db.run('DELETE FROM team_members')
+            for (const m of team.teamMembers) {
+                db.run(insertSql, [
+                    m.id,
+                    m.name ?? '',
+                    m.role,
+                    m.email,
+                    team.userId,
+                    teamId,
+                    rawJson,
+                    fetchedAt
+                ])
+            }
+        })
 
-        dbService.persist()
         console.log(
             `Cursor Economizer: team_members を保存しました (${team.teamMembers.length} 件, teamId=${teamId})`
         )
@@ -1164,11 +1133,6 @@ class ApiService {
         const fetchedAt = new Date().toISOString()
         const rawJson = JSON.stringify(teams)
 
-        dbService.reload()
-        const db = dbService.getDb()
-
-        db.run('DELETE FROM teams')
-
         const insertSql = `
       INSERT INTO teams (
         id, name, role, seats, has_billing,
@@ -1181,30 +1145,32 @@ class ApiService {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
 
-        for (const t of teams.teams) {
-            db.run(insertSql, [
-                t.id,
-                t.name,
-                t.role,
-                t.seats,
-                t.hasBilling ? 1 : 0,
-                t.requestQuotaPerSeat,
-                t.privacyModeForced ? 1 : 0,
-                t.allowSso ? 1 : 0,
-                t.adminOnlyUsagePricing ? 1 : 0,
-                t.subscriptionStatus,
-                t.privacyModeMigrationOptedOut ? 1 : 0,
-                t.membershipType,
-                t.billingCycleStart,
-                t.billingCycleEnd,
-                t.individualSpendLimitsBlocked ? 1 : 0,
-                t.customerBalanceCents,
-                rawJson,
-                fetchedAt
-            ])
-        }
+        dbService.withDb((db) => {
+            db.run('DELETE FROM teams')
+            for (const t of teams.teams) {
+                db.run(insertSql, [
+                    t.id,
+                    t.name,
+                    t.role,
+                    t.seats,
+                    t.hasBilling ? 1 : 0,
+                    t.requestQuotaPerSeat,
+                    t.privacyModeForced ? 1 : 0,
+                    t.allowSso ? 1 : 0,
+                    t.adminOnlyUsagePricing ? 1 : 0,
+                    t.subscriptionStatus,
+                    t.privacyModeMigrationOptedOut ? 1 : 0,
+                    t.membershipType,
+                    t.billingCycleStart,
+                    t.billingCycleEnd,
+                    t.individualSpendLimitsBlocked ? 1 : 0,
+                    t.customerBalanceCents,
+                    rawJson,
+                    fetchedAt
+                ])
+            }
+        })
 
-        dbService.persist()
         console.log(`Cursor Economizer: teams を保存しました (${teams.teams.length} 件)`)
     }
 
