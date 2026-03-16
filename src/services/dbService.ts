@@ -322,9 +322,12 @@ class DbService {
      * ディスクから DB を再読込（他 Window の変更を取り込む）。
      * アトミック: 新 DB インスタンスの作成に成功してから旧インスタンスを閉じる。
      * 途中で失敗しても旧 DB は閉じない（壊れた状態を防ぐ）。
+     *
+     * _calledFromWithDb: withDb() 内部からの正当な呼び出しを示すフラグ。
+     * withDb() 外から直接呼ばれた場合、_operationInProgress が true なら throw する。
      */
-    reload(): void {
-        if (this._operationInProgress) {
+    reload(_calledFromWithDb = false): void {
+        if (!_calledFromWithDb && this._operationInProgress) {
             throw new Error(
                 'Cursor Economizer: reload() が DB 操作中に呼ばれました。' +
                 'これは自己発火防止（Part 1）の不備を示します'
@@ -408,7 +411,7 @@ class DbService {
         this._operationInProgress = true
         try {
             if (shouldReload) {
-                this.reload()
+                this.reload(true)
             }
             const db = this.getDb()
             const result = fn(db)

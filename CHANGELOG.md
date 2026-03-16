@@ -4,6 +4,14 @@ All notable changes to "Cursor Economizer" will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.24] - 2026-03-16
+
+- 軽微なバグの修正
+
+---
+
+- Minor bug fixes
+
 ## [0.1.23] - 2026-03-16
 
 - 複数ワークスペースからの同時使用時にメモリエラーが発生するバグを修正
