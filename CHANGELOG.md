@@ -4,6 +4,14 @@ All notable changes to "Cursor Economizer" will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.25] - 2026-03-17
+
+- 差分取得時にバックフィルウィンドウ（90分）を適用し、API の遅延充填データが既存レコードに反映されるよう修正
+
+---
+
+- Applied a 90-minute backfill window to delta fetches so that delayed token-usage data from the API is correctly updated in existing records
+
 ## [0.1.24] - 2026-03-16
 
 - 軽微なバグの修正

@@ -46,6 +46,9 @@ const HTTP_TIMEOUT_MS = 15_000
 /** 過去 1 年のミリ秒 */
 const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000
 
+/** バックフィルウィンドウ（ミリ秒）: Cursor API の tokenUsage 遅延充填を拾うため差分取得時に遡る幅 */
+const BACKFILL_WINDOW_MS = 90 * 60 * 1000
+
 /** リトライ最大回数（初回 + リトライ 2 回 = 最大 3 試行） */
 const MAX_RETRIES = 2
 
@@ -676,7 +679,7 @@ class ApiService {
             throw new Error(`無効なタイムスタンプ: ${latestTimestamp}`)
         }
 
-        const startDate = latestTimestamp
+        const startDate = String(Math.max(0, startMs - BACKFILL_WINDOW_MS))
         const endDate = String(Date.now())
 
         const allEvents: ApiUsageEvent[] = []
