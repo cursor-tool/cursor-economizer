@@ -1,6 +1,6 @@
 {
   "extension.displayName": "Cursor Economizer",
-  "extension.description": "Cursor の利用料金を確認・分析する拡張機能",
+  "extension.description": "Cursor AI の利用料金をリアルタイムで追跡・分析・予測。ダッシュボード、予算管理、CSV エクスポート対応。",
   "commands.category": "Cursor Economizer",
   "commands.openDetail.title": "詳細を開く",
   "commands.refreshData.title": "データ取得",

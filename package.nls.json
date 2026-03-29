@@ -1,6 +1,6 @@
 {
   "extension.displayName": "Cursor Economizer",
-  "extension.description": "Extension to track and analyze Cursor usage costs.",
+  "extension.description": "Track, analyze, and forecast your Cursor AI usage costs with real-time dashboards, budget goals, and CSV export.",
   "commands.category": "Cursor Economizer",
   "commands.openDetail.title": "Open Details",
   "commands.refreshData.title": "Refresh Data",

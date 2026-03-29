@@ -4,6 +4,16 @@ All notable changes to "Cursor Economizer" will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.26] - 2026-03-29
+
+- Marketplace 向け説明文・キーワード・カテゴリを最適化し、検索での発見性を向上
+- README を再構成 — 「Why Cursor Economizer?」比較表、機能別セクション、FAQ を新設し English-first に統一
+
+---
+
+- Optimized Marketplace description, keywords, and categories to improve search discoverability
+- Restructured README — added "Why Cursor Economizer?" comparison table, per-feature sections, and FAQ with English-first layout
+
 ## [0.1.25] - 2026-03-17
 
 - 差分取得時にバックフィルウィンドウ（90分）を適用し、API の遅延充填データが既存レコードに反映されるよう修正

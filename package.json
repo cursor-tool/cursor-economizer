@@ -2,7 +2,7 @@
   "name": "cursor-economizer",
   "displayName": "%extension.displayName%",
   "description": "%extension.description%",
-  "version": "0.1.25",
+  "version": "0.1.26",
   "publisher": "pacific-system",
   "icon": "img/icon.png",
   "repository": {
@@ -13,7 +13,28 @@
     "vscode": "^1.85.0"
   },
   "categories": [
+    "Visualization",
     "Other"
+  ],
+  "keywords": [
+    "cursor",
+    "ai",
+    "cost",
+    "usage",
+    "tracking",
+    "monitoring",
+    "pricing",
+    "budget",
+    "tokens",
+    "analytics",
+    "dashboard",
+    "billing",
+    "forecast",
+    "quota",
+    "csv",
+    "sqlite",
+    "eco",
+    "expense"
   ],
   "activationEvents": [
     "onStartupFinished"
